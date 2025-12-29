@@ -8,54 +8,65 @@ type PanelGroup struct {
 	visible  bool
 }
 
-var (
+type Panels struct {
 	requestPanel     *PanelGroup
 	projectViewPanel *PanelGroup
 	settingsPanel    *PanelGroup
 	newTabPanel      *PanelGroup
-)
+	projectWindow    *ProjectWindow
+}
 
 // initPanels initializes the panel groups (call after creating controls)
-func initPanels() {
-	requestPanel = &PanelGroup{
+func initPanels(pw *ProjectWindow) *Panels {
+	requestPanel := &PanelGroup{
 		controls: []win32.HWND{
-			methodCombo, urlInput, headersInput, queryInput, bodyInput,
-			responseOutput, statusLabel, sendBtn,
-			methodLabel, urlLabel, headersLabel, queryLabel, bodyLabel, responseLabel,
+			pw.methodCombo, pw.urlInput, pw.headersInput, pw.queryInput, pw.bodyInput,
+			pw.responseOutput, pw.statusLabel, pw.sendBtn,
+			pw.methodLabel, pw.urlLabel, pw.headersLabel, pw.queryLabel, pw.bodyLabel, pw.responseLabel,
 		},
 		visible: false,
 	}
 
-	projectViewPanel = &PanelGroup{
-		controls: []win32.HWND{projectListBox, openReqBtn, deleteReqBtn, projectInfo, saveBtn},
+	projectViewPanel := &PanelGroup{
+		controls: []win32.HWND{pw.projectListBox, pw.openReqBtn, pw.deleteReqBtn, pw.projectInfo, pw.saveBtn},
 		visible:  false,
 	}
 
-	settingsPanel = &PanelGroup{
+	settingsPanel := &PanelGroup{
 		controls: []win32.HWND{
-			certInput, keyInput, caInput, skipVerifyChk,
-			certBtn, keyBtn, caBtn,
-			certLabel, keyLabel, caLabel, settingsTitle,
+			pw.certInput, pw.keyInput, pw.caInput, pw.skipVerifyChk,
+			pw.certBtn, pw.keyBtn, pw.caBtn,
+			pw.certLabel, pw.keyLabel, pw.caLabel, pw.settingsTitle,
 		},
 		visible: false,
 	}
 
-	newTabPanel = &PanelGroup{
+	newTabPanel := &PanelGroup{
 		controls: []win32.HWND{
-			newTabTitle, newTabNewBtn, newTabOpenBtn,
-			recentLabel, recentListBox,
+			pw.newTabTitle, pw.newTabNewBtn, pw.newTabOpenBtn,
+			pw.recentLabel, pw.recentListBox,
 		},
 		visible: true,
 	}
+	panels := &Panels{
+		requestPanel:     requestPanel,
+		projectViewPanel: projectViewPanel,
+		settingsPanel:    settingsPanel,
+		newTabPanel:      newTabPanel,
+	}
+	//TODO: refactor to avoid circular reference
+	pw.panels = panels
+	panels.projectWindow = pw
+	return panels
 }
 
 // showPanel shows a panel and hides others
-func showPanel(panel *PanelGroup) {
+func (p *Panels) showPanel(panel *PanelGroup) {
 	// Hide all panels
-	hidePanel(requestPanel)
-	hidePanel(projectViewPanel)
-	hidePanel(settingsPanel)
-	hidePanel(newTabPanel)
+	hidePanel(p.requestPanel)
+	hidePanel(p.projectViewPanel)
+	hidePanel(p.settingsPanel)
+	hidePanel(p.newTabPanel)
 
 	// Show the requested panel
 	if panel != nil {
@@ -82,63 +93,24 @@ func hidePanel(panel *PanelGroup) {
 }
 
 // showRequestPanel shows the request editing panel
-func showRequestPanel() {
-	showPanel(requestPanel)
+func (p *Panels) showRequestPanel() {
+	p.showPanel(p.requestPanel)
 }
 
 // showProjectViewPanel shows the project structure panel
-func showProjectViewPanel() {
-	showPanel(projectViewPanel)
-	updateProjectList()
+func (p *Panels) showProjectViewPanel() {
+	p.showPanel(p.projectViewPanel)
+	p.projectWindow.updateProjectList()
 }
 
 // showSettingsPanel shows the global settings panel
-func showSettingsPanel() {
-	showPanel(settingsPanel)
-	loadCertificateUI()
+func (p *Panels) showSettingsPanel() {
+	p.showPanel(p.settingsPanel)
+	p.projectWindow.loadCertificateUI()
 }
 
 // showWelcomePanel shows the welcome panel
-func showWelcomePanel() {
-	showPanel(newTabPanel)
-	updateRecentList()
-}
-
-// updateProjectList refreshes the project structure list
-func updateProjectList() {
-	if projectListBox == 0 || currentProject == nil {
-		return
-	}
-
-	// Clear the listbox
-	win32.ListBoxResetContent(projectListBox)
-
-	// Add all requests
-	for _, req := range currentProject.Requests {
-		displayText := req.Method + " " + req.Name
-		if req.URL != "" {
-			shortURL := req.URL
-			if len(shortURL) > 40 {
-				shortURL = shortURL[:40] + "..."
-			}
-			displayText = req.Method + " " + shortURL
-		}
-		win32.ListBoxAddString(projectListBox, displayText)
-	}
-}
-
-// updateRecentList refreshes the recently used projects list
-func updateRecentList() {
-	if recentListBox == 0 {
-		return
-	}
-	win32.ListBoxResetContent(recentListBox)
-	for _, path := range recentProjects {
-		win32.ListBoxAddString(recentListBox, path)
-	}
-}
-
-// getSelectedRequestIndex returns the selected index in project list
-func getSelectedRequestIndex() int {
-	return win32.ListBoxGetCurSel(projectListBox)
+func (p *Panels) showWelcomePanel() {
+	p.showPanel(p.newTabPanel)
+	p.projectWindow.updateRecentList()
 }

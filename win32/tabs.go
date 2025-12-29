@@ -18,7 +18,6 @@ const (
 	HitCloseButton
 	HitAddButton
 	HitMenuButton
-	HitCaption // Draggable area
 )
 
 // TabManager manages a tab bar integrated with title bar
@@ -40,6 +39,7 @@ type TabManager struct {
 
 	// Dimensions
 	tabHeight       int32
+	tabWidth        int32
 	tabMinWidth     int32
 	tabMaxWidth     int32
 	tabPadding      int32
@@ -50,7 +50,7 @@ type TabManager struct {
 	menuBtnSize     int32
 	captionBtnWidth int32 // Width of min/max/close buttons
 
-	// Colors (Windows 11 style - Mica-like)
+	// Colors
 	bgColor           COLORREF
 	bgColorInactive   COLORREF
 	tabBgColor        COLORREF
@@ -68,12 +68,12 @@ type TabManager struct {
 	shadowColor       COLORREF
 
 	// Fonts
-	font     HFONT
-	iconFont HFONT
+	font HFONT
 
 	// Callbacks
 	OnTabChanged      func(tabID int)
 	OnTabClosed       func(tabID int)
+	OnBeforeTabChange func(oldTabID int) // Called before switching tabs
 	OnMenuClick       func()
 }
 
@@ -90,7 +90,8 @@ func NewTabManager(parent HWND) *TabManager {
 		hoverMenuBtn:  false,
 		mouseTracking: false,
 
-		titleBarHeight: 46, 
+		// Title bar sizing
+		titleBarHeight: 46, // Slightly taller for better tab spacing
 		captionHeight:  32,
 		borderSize:     8,
 
@@ -103,9 +104,9 @@ func NewTabManager(parent HWND) *TabManager {
 		addBtnSize:      28,
 		cornerRadius:    8,
 		menuBtnSize:     38,
-		captionBtnWidth: 46, // Standard Windows caption button width
+		captionBtnWidth: 46,
 
-		// Windows 11 Mica-inspired colors (light theme)
+		// Colors
 		bgColor:           RGB(243, 243, 243),
 		bgColorInactive:   RGB(249, 249, 249),
 		tabBgColor:        RGB(243, 243, 243),
@@ -132,18 +133,9 @@ func NewTabManager(parent HWND) *TabManager {
 		"Segoe UI",
 	)
 
-	tm.iconFont = CreateFont(
-		-14, 0, 0, 0, FW_NORMAL,
-		0, 0, 0, DEFAULT_CHARSET,
-		OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-		CLEARTYPE_QUALITY, DEFAULT_PITCH|FF_DONTCARE,
-		"Segoe UI Symbol",
-	)
-
 	return tm
 }
 
-// AddTab adds a new tab and returns its ID
 func (tm *TabManager) AddTab(title string, data any) int {
 	tab := &Tab{
 		ID:    tm.nextTabID,
@@ -153,7 +145,7 @@ func (tm *TabManager) AddTab(title string, data any) int {
 	tm.nextTabID++
 	tm.tabs = append(tm.tabs, tab)
 
-	tm.activeTabID = tab.ID
+	// Don't set activeTabID here - let SetActiveTab handle it so callbacks fire properly
 
 	tm.Invalidate()
 	return tab.ID
@@ -198,6 +190,11 @@ func (tm *TabManager) SetActiveTab(tabID int) {
 	for _, tab := range tm.tabs {
 		if tab.ID == tabID {
 			if tm.activeTabID != tabID {
+				// Call before change callback to allow saving state
+				if tm.OnBeforeTabChange != nil && tm.activeTabID != -1 {
+					tm.OnBeforeTabChange(tm.activeTabID)
+				}
+
 				tm.activeTabID = tabID
 				if tm.OnTabChanged != nil {
 					tm.OnTabChanged(tabID)
@@ -242,10 +239,14 @@ func (tm *TabManager) GetContentOffset() int32 {
 // Invalidate triggers a repaint of the tab bar area
 func (tm *TabManager) Invalidate() {
 	if tm.parentHwnd != 0 {
+		// Get the actual client rect width for proper invalidation
+		var clientRect RECT
+		GetClientRect(tm.parentHwnd, &clientRect)
+
 		rect := RECT{
 			Left:   0,
 			Top:    0,
-			Right:  3000, // Will be clipped
+			Right:  clientRect.Right, // Use actual window width
 			Bottom: tm.titleBarHeight,
 		}
 		InvalidateRect(tm.parentHwnd, &rect, true)
@@ -268,13 +269,7 @@ func (tm *TabManager) getTabRect(index int, totalWidth int32) RECT {
 	availableWidth := totalWidth - rightReserved - tm.addBtnSize - tm.tabPadding*2
 
 	// Calculate tab width
-	tabWidth := (availableWidth - (numTabs-1)*tm.tabGap) / numTabs
-	if tabWidth > tm.tabMaxWidth {
-		tabWidth = tm.tabMaxWidth
-	}
-	if tabWidth < tm.tabMinWidth {
-		tabWidth = tm.tabMinWidth
-	}
+	tabWidth := max(min((availableWidth-(numTabs-1)*tm.tabGap)/numTabs, tm.tabMaxWidth), tm.tabMinWidth)
 
 	// Tab Y position - center vertically in title bar
 	topMargin := (tm.titleBarHeight-tm.tabHeight)/2 + 2
@@ -332,6 +327,10 @@ func (tm *TabManager) getMenuButtonRect(totalWidth int32) RECT {
 	}
 }
 
+func (tm *TabManager) SetWidth(width int32) {
+	tm.tabWidth = width
+}
+
 // HitTest determines what was clicked/hovered
 func (tm *TabManager) HitTest(x, y int32, totalWidth int32) (result HitTestResult, tabIndex int) {
 	tabIndex = -1
@@ -361,11 +360,6 @@ func (tm *TabManager) HitTest(x, y int32, totalWidth int32) (result HitTestResul
 			}
 			return HitTab, tabIndex
 		}
-	}
-
-	// If in title bar area but not on any control, it's draggable caption
-	if y < tm.titleBarHeight {
-		return HitCaption, -1
 	}
 
 	return HitNone, -1
@@ -524,10 +518,7 @@ func (tm *TabManager) drawTab(hdc HDC, index int, tab *Tab, totalWidth int32) {
 		// Draw rounded rectangle for the tab, but don't extend beyond the separator line
 		// The separator line is at titleBarHeight - 1, so limit the bottom to that
 		maxBottom := tm.titleBarHeight - 1
-		roundedBottom := rect.Bottom + tm.cornerRadius
-		if roundedBottom > maxBottom {
-			roundedBottom = maxBottom
-		}
+		roundedBottom := min(rect.Bottom+tm.cornerRadius, maxBottom)
 
 		RoundRect(hdc, rect.Left, rect.Top, rect.Right, roundedBottom, tm.cornerRadius*2, tm.cornerRadius*2)
 
