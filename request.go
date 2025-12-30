@@ -13,7 +13,6 @@ import (
 
 // Request represents a single HTTP request configuration
 type Request struct {
-	ID          string            `json:"id"`
 	Name        string            `json:"name"`
 	Method      string            `json:"method"`
 	URL         string            `json:"url"`
@@ -25,7 +24,6 @@ type Request struct {
 // NewRequest creates a new request with default values
 func NewRequest(name string) *Request {
 	return &Request{
-		ID:          generateID(),
 		Name:        name,
 		Method:      "GET",
 		URL:         "",
@@ -35,7 +33,7 @@ func NewRequest(name string) *Request {
 	}
 }
 
-func sendRequest(request *Request, callback func(response string, err error)) {
+func sendRequest(request *Request, settings *Settings, callback func(response string, err error)) {
 
 	v := url.Values{}
 	for key, value := range request.QueryParams {
@@ -65,7 +63,7 @@ func sendRequest(request *Request, callback func(response string, err error)) {
 	}
 
 	// Create HTTP client with TLS configuration
-	client, err := createHTTPClient()
+	client, err := createHTTPClient(settings)
 	if err != nil {
 		callback("", err)
 		return
@@ -94,15 +92,15 @@ func sendRequest(request *Request, callback func(response string, err error)) {
 }
 
 // createHTTPClient creates an HTTP client with optional TLS client certificate
-func createHTTPClient() (*http.Client, error) {
+func createHTTPClient(settings *Settings) (*http.Client, error) {
 	client := &http.Client{}
 
 	// Check if we have certificate configuration
-	if globalSettings.Certificate == nil {
+	if settings.Certificate == nil {
 		return client, nil
 	}
 
-	cert := globalSettings.Certificate
+	cert := settings.Certificate
 	certFile := strings.TrimSpace(cert.CertFile)
 	keyFile := strings.TrimSpace(cert.KeyFile)
 

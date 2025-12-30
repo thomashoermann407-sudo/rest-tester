@@ -3,114 +3,75 @@ package main
 import "hoermi.com/rest-test/win32"
 
 // Panel visibility groups
-type PanelGroup struct {
-	controls []win32.HWND
-	visible  bool
-}
+type PanelGroup []win32.Controler
 
-type Panels struct {
-	requestPanel     *PanelGroup
-	projectViewPanel *PanelGroup
-	settingsPanel    *PanelGroup
-	newTabPanel      *PanelGroup
-	projectWindow    *ProjectWindow
-}
+type Panels map[PanelName]PanelGroup
+
+type PanelName string
+
+const (
+	PanelRequest     PanelName = "request"
+	PanelProjectView PanelName = "projectView"
+	PanelSettings    PanelName = "settings"
+	PanelWelcome     PanelName = "welcome"
+)
 
 // initPanels initializes the panel groups (call after creating controls)
-func initPanels(pw *ProjectWindow) *Panels {
-	requestPanel := &PanelGroup{
-		controls: []win32.HWND{
-			pw.methodCombo, pw.urlInput, pw.headersInput, pw.queryInput, pw.bodyInput,
-			pw.responseOutput, pw.statusLabel, pw.sendBtn,
-			pw.methodLabel, pw.urlLabel, pw.headersLabel, pw.queryLabel, pw.bodyLabel, pw.responseLabel,
-		},
-		visible: false,
+func initPanels(pw *ProjectWindow) Panels {
+	panels := make(Panels)
+	panels[PanelRequest] = PanelGroup{
+		pw.methodCombo, pw.urlInput, pw.headersInput, pw.queryInput, pw.bodyInput,
+		pw.responseOutput, pw.statusLabel, pw.sendBtn,
+		pw.methodLabel, pw.urlLabel, pw.headersLabel, pw.queryLabel, pw.bodyLabel, pw.responseLabel,
 	}
 
-	projectViewPanel := &PanelGroup{
-		controls: []win32.HWND{pw.projectListBox, pw.openReqBtn, pw.deleteReqBtn, pw.projectInfo, pw.saveBtn},
-		visible:  false,
+	panels[PanelProjectView] = PanelGroup{
+		pw.projectListBox, pw.openReqBtn, pw.deleteReqBtn, pw.projectInfo, pw.saveBtn,
 	}
 
-	settingsPanel := &PanelGroup{
-		controls: []win32.HWND{
-			pw.certInput, pw.keyInput, pw.caInput, pw.skipVerifyChk,
-			pw.certBtn, pw.keyBtn, pw.caBtn,
-			pw.certLabel, pw.keyLabel, pw.caLabel, pw.settingsTitle,
-		},
-		visible: false,
+	panels[PanelSettings] = PanelGroup{
+		pw.certInput, pw.keyInput, pw.caInput, pw.skipVerifyChk,
+		pw.certBtn, pw.keyBtn, pw.caBtn,
+		pw.certLabel, pw.keyLabel, pw.caLabel, pw.settingsTitle,
+		pw.saveSettingsBtn,
 	}
 
-	newTabPanel := &PanelGroup{
-		controls: []win32.HWND{
-			pw.newTabTitle, pw.newTabNewBtn, pw.newTabOpenBtn,
-			pw.recentLabel, pw.recentListBox,
-		},
-		visible: true,
+	panels[PanelWelcome] = PanelGroup{
+		pw.newTabTitle, pw.newTabNewBtn, pw.newTabOpenBtn,
+		pw.recentLabel, pw.recentListBox,
 	}
-	panels := &Panels{
-		requestPanel:     requestPanel,
-		projectViewPanel: projectViewPanel,
-		settingsPanel:    settingsPanel,
-		newTabPanel:      newTabPanel,
-	}
-	//TODO: refactor to avoid circular reference
-	pw.panels = panels
-	panels.projectWindow = pw
+
 	return panels
 }
 
-// showPanel shows a panel and hides others
-func (p *Panels) showPanel(panel *PanelGroup) {
-	// Hide all panels
-	hidePanel(p.requestPanel)
-	hidePanel(p.projectViewPanel)
-	hidePanel(p.settingsPanel)
-	hidePanel(p.newTabPanel)
-
+// show shows a panel
+func (panelGroup PanelGroup) show() {
+	if panelGroup == nil {
+		return
+	}
 	// Show the requested panel
-	if panel != nil {
-		panel.visible = true
-		for _, hwnd := range panel.controls {
-			if hwnd != 0 {
-				win32.ShowWindow(hwnd, win32.SW_SHOW)
-			}
-		}
+	for _, ctrl := range panelGroup {
+		ctrl.Show()
 	}
 }
 
-// hidePanel hides a panel
-func hidePanel(panel *PanelGroup) {
-	if panel == nil {
+// hide hides a panel
+func (panelGroup PanelGroup) hide() {
+	if panelGroup == nil {
 		return
 	}
-	panel.visible = false
-	for _, hwnd := range panel.controls {
-		if hwnd != 0 {
-			win32.ShowWindow(hwnd, win32.SW_HIDE)
-		}
+	for _, ctrl := range panelGroup {
+		ctrl.Hide()
 	}
 }
 
 // showRequestPanel shows the request editing panel
-func (p *Panels) showRequestPanel() {
-	p.showPanel(p.requestPanel)
-}
-
-// showProjectViewPanel shows the project structure panel
-func (p *Panels) showProjectViewPanel() {
-	p.showPanel(p.projectViewPanel)
-	p.projectWindow.updateProjectList()
-}
-
-// showSettingsPanel shows the global settings panel
-func (p *Panels) showSettingsPanel() {
-	p.showPanel(p.settingsPanel)
-	p.projectWindow.loadCertificateUI()
-}
-
-// showWelcomePanel shows the welcome panel
-func (p *Panels) showWelcomePanel() {
-	p.showPanel(p.newTabPanel)
-	p.projectWindow.updateRecentList()
+func (p Panels) show(panel PanelName) {
+	for name, pg := range p {
+		if name == panel {
+			pg.show()
+		} else {
+			pg.hide()
+		}
+	}
 }

@@ -12,70 +12,51 @@ var (
 	comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
 	comctl32 = syscall.NewLazyDLL("comctl32.dll")
 	uxtheme  = syscall.NewLazyDLL("uxtheme.dll")
-	dwmapi   = syscall.NewLazyDLL("dwmapi.dll")
 
-	procGetModuleHandleW             = kernel32.NewProc("GetModuleHandleW")
-	procLoadCursorW                  = user32.NewProc("LoadCursorW")
-	procLoadIconW                    = user32.NewProc("LoadIconW")
-	procSetCursor                    = user32.NewProc("SetCursor")
-	procRegisterClassExW             = user32.NewProc("RegisterClassExW")
-	procCreateWindowExW              = user32.NewProc("CreateWindowExW")
-	procShowWindow                   = user32.NewProc("ShowWindow")
-	procUpdateWindow                 = user32.NewProc("UpdateWindow")
-	procGetMessageW                  = user32.NewProc("GetMessageW")
-	procTranslateMessage             = user32.NewProc("TranslateMessage")
-	procDispatchMessageW             = user32.NewProc("DispatchMessageW")
-	procPostQuitMessage              = user32.NewProc("PostQuitMessage")
-	procDefWindowProcW               = user32.NewProc("DefWindowProcW")
-	procMessageBoxW                  = user32.NewProc("MessageBoxW")
-	procBeginPaint                   = user32.NewProc("BeginPaint")
-	procEndPaint                     = user32.NewProc("EndPaint")
-	procGetClientRect                = user32.NewProc("GetClientRect")
-	procInvalidateRect               = user32.NewProc("InvalidateRect")
-	procSetCapture                   = user32.NewProc("SetCapture")
-	procReleaseCapture               = user32.NewProc("ReleaseCapture")
-	procGetCursorPos                 = user32.NewProc("GetCursorPos")
-	procScreenToClient               = user32.NewProc("ScreenToClient")
-	procSetWindowPos                 = user32.NewProc("SetWindowPos")
-	procMoveWindow                   = user32.NewProc("MoveWindow")
-	procDestroyWindow                = user32.NewProc("DestroyWindow")
-	procGetDC                        = user32.NewProc("GetDC")
-	procReleaseDC                    = user32.NewProc("ReleaseDC")
-	procFillRect                     = user32.NewProc("FillRect")
-	procDrawTextW                    = user32.NewProc("DrawTextW")
-	procSetBkMode                    = gdi32.NewProc("SetBkMode")
-	procSetTextColor                 = gdi32.NewProc("SetTextColor")
-	procCreateSolidBrush             = gdi32.NewProc("CreateSolidBrush")
-	procDeleteObject                 = gdi32.NewProc("DeleteObject")
-	procSelectObject                 = gdi32.NewProc("SelectObject")
-	procCreateFontW                  = gdi32.NewProc("CreateFontW")
-	procCreatePen                    = gdi32.NewProc("CreatePen")
-	procRectangle                    = gdi32.NewProc("Rectangle")
-	procRoundRect                    = gdi32.NewProc("RoundRect")
-	procMoveToEx                     = gdi32.NewProc("MoveToEx")
-	procLineTo                       = gdi32.NewProc("LineTo")
-	procEllipse                      = gdi32.NewProc("Ellipse")
-	procSetDCBrushColor              = gdi32.NewProc("SetDCBrushColor")
-	procGetStockObject               = gdi32.NewProc("GetStockObject")
-	procSetDCPenColor                = gdi32.NewProc("SetDCPenColor")
-	procSendMessageW                 = user32.NewProc("SendMessageW")
-	procGetWindowTextW               = user32.NewProc("GetWindowTextW")
-	procSetWindowTextW               = user32.NewProc("SetWindowTextW")
-	procGetWindowTextLengthW         = user32.NewProc("GetWindowTextLengthW")
-	procGetOpenFileNameW             = comdlg32.NewProc("GetOpenFileNameW")
-	procGetSaveFileNameW             = comdlg32.NewProc("GetSaveFileNameW")
-	procCreatePopupMenu              = user32.NewProc("CreatePopupMenu")
-	procAppendMenuW                  = user32.NewProc("AppendMenuW")
-	procTrackPopupMenu               = user32.NewProc("TrackPopupMenu")
-	procDestroyMenu                  = user32.NewProc("DestroyMenu")
-	procGetWindowRect                = user32.NewProc("GetWindowRect")
-	procInitCommonControlsEx         = comctl32.NewProc("InitCommonControlsEx")
-	procSetWindowTheme               = uxtheme.NewProc("SetWindowTheme")
-	procDwmExtendFrameIntoClientArea = dwmapi.NewProc("DwmExtendFrameIntoClientArea")
-	procDwmDefWindowProc             = dwmapi.NewProc("DwmDefWindowProc")
-	procGetSystemMetrics             = user32.NewProc("GetSystemMetrics")
-	procAdjustWindowRectEx           = user32.NewProc("AdjustWindowRectEx")
-	procRedrawWindow                 = user32.NewProc("RedrawWindow")
+	procGetModuleHandleW     = kernel32.NewProc("GetModuleHandleW")
+	procLoadCursorW          = user32.NewProc("LoadCursorW")
+	procLoadIconW            = user32.NewProc("LoadIconW")
+	procRegisterClassExW     = user32.NewProc("RegisterClassExW")
+	procCreateWindowExW      = user32.NewProc("CreateWindowExW")
+	procShowWindow           = user32.NewProc("ShowWindow")
+	procUpdateWindow         = user32.NewProc("UpdateWindow")
+	procGetMessageW          = user32.NewProc("GetMessageW")
+	procTranslateMessage     = user32.NewProc("TranslateMessage")
+	procDispatchMessageW     = user32.NewProc("DispatchMessageW")
+	procPostQuitMessage      = user32.NewProc("PostQuitMessage")
+	procDefWindowProcW       = user32.NewProc("DefWindowProcW")
+	procMessageBoxW          = user32.NewProc("MessageBoxW")
+	procBeginPaint           = user32.NewProc("BeginPaint")
+	procEndPaint             = user32.NewProc("EndPaint")
+	procGetClientRect        = user32.NewProc("GetClientRect")
+	procInvalidateRect       = user32.NewProc("InvalidateRect")
+	procGetCursorPos         = user32.NewProc("GetCursorPos")
+	procScreenToClient       = user32.NewProc("ScreenToClient")
+	procMoveWindow           = user32.NewProc("MoveWindow")
+	procFillRect             = user32.NewProc("FillRect")
+	procDrawTextW            = user32.NewProc("DrawTextW")
+	procSetBkMode            = gdi32.NewProc("SetBkMode")
+	procSetTextColor         = gdi32.NewProc("SetTextColor")
+	procCreateSolidBrush     = gdi32.NewProc("CreateSolidBrush")
+	procDeleteObject         = gdi32.NewProc("DeleteObject")
+	procSelectObject         = gdi32.NewProc("SelectObject")
+	procCreateFontW          = gdi32.NewProc("CreateFontW")
+	procCreatePen            = gdi32.NewProc("CreatePen")
+	procRoundRect            = gdi32.NewProc("RoundRect")
+	procMoveToEx             = gdi32.NewProc("MoveToEx")
+	procLineTo               = gdi32.NewProc("LineTo")
+	procSendMessageW         = user32.NewProc("SendMessageW")
+	procGetWindowTextW       = user32.NewProc("GetWindowTextW")
+	procSetWindowTextW       = user32.NewProc("SetWindowTextW")
+	procGetWindowTextLengthW = user32.NewProc("GetWindowTextLengthW")
+	procGetOpenFileNameW     = comdlg32.NewProc("GetOpenFileNameW")
+	procGetSaveFileNameW     = comdlg32.NewProc("GetSaveFileNameW")
+	procCreatePopupMenu      = user32.NewProc("CreatePopupMenu")
+	procAppendMenuW          = user32.NewProc("AppendMenuW")
+	procTrackPopupMenu       = user32.NewProc("TrackPopupMenu")
+	procDestroyMenu          = user32.NewProc("DestroyMenu")
+	procInitCommonControlsEx = comctl32.NewProc("InitCommonControlsEx")
+	procSetWindowTheme       = uxtheme.NewProc("SetWindowTheme")
 )
 
 func getModuleHandle(name *uint16) HINSTANCE {
@@ -83,24 +64,14 @@ func getModuleHandle(name *uint16) HINSTANCE {
 	return HINSTANCE(ret)
 }
 
-func LoadCursor(instance HINSTANCE, cursorName uintptr) HCURSOR {
+func loadCursor(instance HINSTANCE, cursorName uintptr) HCURSOR {
 	ret, _, _ := procLoadCursorW.Call(uintptr(instance), cursorName)
 	return HCURSOR(ret)
 }
 
-func LoadIcon(instance HINSTANCE, iconName uintptr) HICON {
+func loadIcon(instance HINSTANCE, iconName uintptr) HICON {
 	ret, _, _ := procLoadIconW.Call(uintptr(instance), iconName)
 	return HICON(ret)
-}
-
-// MAKEINTRESOURCE converts an integer resource ID to a resource name pointer
-func MAKEINTRESOURCE(id int) uintptr {
-	return uintptr(id)
-}
-
-func SetCursor(cursor HCURSOR) HCURSOR {
-	ret, _, _ := procSetCursor.Call(uintptr(cursor))
-	return HCURSOR(ret)
 }
 
 func registerClassEx(wcx *WNDCLASSEX) uint16 {
@@ -126,17 +97,12 @@ func createWindowEx(exStyle uint32, className, windowName *uint16, style uint32,
 	return HWND(ret)
 }
 
-func ShowWindow(hwnd HWND, cmdShow int32) bool {
-	ret, _, _ := procShowWindow.Call(uintptr(hwnd), uintptr(cmdShow))
-	return ret != 0
-}
-
-func UpdateWindow(hwnd HWND) bool {
+func updateWindow(hwnd HWND) bool {
 	ret, _, _ := procUpdateWindow.Call(uintptr(hwnd))
 	return ret != 0
 }
 
-func GetMessage(msg *MSG, hwnd HWND, msgFilterMin, msgFilterMax uint32) int32 {
+func getMessage(msg *MSG, hwnd HWND, msgFilterMin, msgFilterMax uint32) int32 {
 	ret, _, _ := procGetMessageW.Call(
 		uintptr(unsafe.Pointer(msg)),
 		uintptr(hwnd),
@@ -146,21 +112,21 @@ func GetMessage(msg *MSG, hwnd HWND, msgFilterMin, msgFilterMax uint32) int32 {
 	return int32(ret)
 }
 
-func TranslateMessage(msg *MSG) bool {
+func translateMessage(msg *MSG) bool {
 	ret, _, _ := procTranslateMessage.Call(uintptr(unsafe.Pointer(msg)))
 	return ret != 0
 }
 
-func DispatchMessage(msg *MSG) uintptr {
+func dispatchMessage(msg *MSG) uintptr {
 	ret, _, _ := procDispatchMessageW.Call(uintptr(unsafe.Pointer(msg)))
 	return ret
 }
 
-func PostQuitMessage(exitCode int32) {
+func postQuitMessage(exitCode int32) {
 	procPostQuitMessage.Call(uintptr(exitCode))
 }
 
-func DefWindowProc(hwnd HWND, msg uint32, wParam, lParam uintptr) uintptr {
+func defWindowProc(hwnd HWND, msg uint32, wParam, lParam uintptr) uintptr {
 	ret, _, _ := procDefWindowProcW.Call(
 		uintptr(hwnd),
 		uintptr(msg),
@@ -180,22 +146,22 @@ func MessageBox(hwnd HWND, text, caption string, type_ uint32) int32 {
 	return int32(ret)
 }
 
-func BeginPaint(hwnd HWND, ps *PAINTSTRUCT) HDC {
+func beginPaint(hwnd HWND, ps *PAINTSTRUCT) HDC {
 	ret, _, _ := procBeginPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(ps)))
 	return HDC(ret)
 }
 
-func EndPaint(hwnd HWND, ps *PAINTSTRUCT) bool {
+func endPaint(hwnd HWND, ps *PAINTSTRUCT) bool {
 	ret, _, _ := procEndPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(ps)))
 	return ret != 0
 }
 
-func GetClientRect(hwnd HWND, rect *RECT) bool {
+func getClientRect(hwnd HWND, rect *RECT) bool {
 	ret, _, _ := procGetClientRect.Call(uintptr(hwnd), uintptr(unsafe.Pointer(rect)))
 	return ret != 0
 }
 
-func InvalidateRect(hwnd HWND, rect *RECT, erase bool) bool {
+func invalidateRect(hwnd HWND, rect *RECT, erase bool) bool {
 	var eraseVal uintptr
 	if erase {
 		eraseVal = 1
@@ -204,97 +170,63 @@ func InvalidateRect(hwnd HWND, rect *RECT, erase bool) bool {
 	return ret != 0
 }
 
-func SetCapture(hwnd HWND) HWND {
-	ret, _, _ := procSetCapture.Call(uintptr(hwnd))
-	return HWND(ret)
-}
-
-func ReleaseCapture() bool {
-	ret, _, _ := procReleaseCapture.Call()
-	return ret != 0
-}
-
-func GetCursorPos(point *POINT) bool {
+func getCursorPos(point *POINT) bool {
 	ret, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(point)))
 	return ret != 0
 }
 
-func ScreenToClient(hwnd HWND, point *POINT) bool {
+func screenToClient(hwnd HWND, point *POINT) bool {
 	ret, _, _ := procScreenToClient.Call(uintptr(hwnd), uintptr(unsafe.Pointer(point)))
 	return ret != 0
 }
 
-// GetCursorPosClient returns cursor position in client coordinates
-func GetCursorPosClient(hwnd HWND) (int32, int32) {
+// getCursorPosClient returns cursor position in client coordinates
+func getCursorPosClient(hwnd HWND) (int32, int32) {
 	var pt POINT
-	if GetCursorPos(&pt) {
-		ScreenToClient(hwnd, &pt)
+	if getCursorPos(&pt) {
+		screenToClient(hwnd, &pt)
 		return pt.X, pt.Y
 	}
 	return 0, 0
 }
 
-func MoveWindow(hwnd HWND, x, y, width, height int32, repaint bool) bool {
-	var repaintVal uintptr
-	if repaint {
-		repaintVal = 1
-	}
-	ret, _, _ := procMoveWindow.Call(uintptr(hwnd), uintptr(x), uintptr(y), uintptr(width), uintptr(height), repaintVal)
-	return ret != 0
-}
-
-func DestroyWindow(hwnd HWND) bool {
-	ret, _, _ := procDestroyWindow.Call(uintptr(hwnd))
-	return ret != 0
-}
-
-func GetDC(hwnd HWND) HDC {
-	ret, _, _ := procGetDC.Call(uintptr(hwnd))
-	return HDC(ret)
-}
-
-func ReleaseDC(hwnd HWND, hdc HDC) int32 {
-	ret, _, _ := procReleaseDC.Call(uintptr(hwnd), uintptr(hdc))
-	return int32(ret)
-}
-
-func FillRect(hdc HDC, rect *RECT, brush HBRUSH) int32 {
+func fillRect(hdc HDC, rect *RECT, brush HBRUSH) int32 {
 	ret, _, _ := procFillRect.Call(uintptr(hdc), uintptr(unsafe.Pointer(rect)), uintptr(brush))
 	return int32(ret)
 }
 
-func DrawText(hdc HDC, text string, rect *RECT, format uint32) int32 {
+func drawText(hdc HDC, text string, rect *RECT, format uint32) int32 {
 	textPtr := StringToUTF16Ptr(text)
 	ret, _, _ := procDrawTextW.Call(uintptr(hdc), uintptr(unsafe.Pointer(textPtr)), uintptr(len(text)), uintptr(unsafe.Pointer(rect)), uintptr(format))
 	return int32(ret)
 }
 
-func SetBkMode(hdc HDC, mode int32) int32 {
+func setBkMode(hdc HDC, mode int32) int32 {
 	ret, _, _ := procSetBkMode.Call(uintptr(hdc), uintptr(mode))
 	return int32(ret)
 }
 
-func SetTextColor(hdc HDC, color COLORREF) COLORREF {
+func setTextColor(hdc HDC, color COLORREF) COLORREF {
 	ret, _, _ := procSetTextColor.Call(uintptr(hdc), uintptr(color))
 	return COLORREF(ret)
 }
 
-func CreateSolidBrush(color COLORREF) HBRUSH {
+func createSolidBrush(color COLORREF) HBRUSH {
 	ret, _, _ := procCreateSolidBrush.Call(uintptr(color))
 	return HBRUSH(ret)
 }
 
-func DeleteObject(obj HANDLE) bool {
+func deleteObject(obj HANDLE) bool {
 	ret, _, _ := procDeleteObject.Call(uintptr(obj))
 	return ret != 0
 }
 
-func SelectObject(hdc HDC, obj HANDLE) HANDLE {
+func selectObject(hdc HDC, obj HANDLE) HANDLE {
 	ret, _, _ := procSelectObject.Call(uintptr(hdc), uintptr(obj))
 	return HANDLE(ret)
 }
 
-func CreateFont(height, width, escapement, orientation, weight int32, italic, underline, strikeOut, charSet, outputPrecision, clipPrecision, quality, pitchAndFamily uint32, faceName string) HFONT {
+func createFont(height, width, escapement, orientation, weight int32, italic, underline, strikeOut, charSet, outputPrecision, clipPrecision, quality, pitchAndFamily uint32, faceName string) HFONT {
 	ret, _, _ := procCreateFontW.Call(
 		uintptr(height), uintptr(width), uintptr(escapement), uintptr(orientation), uintptr(weight),
 		uintptr(italic), uintptr(underline), uintptr(strikeOut), uintptr(charSet),
@@ -304,103 +236,52 @@ func CreateFont(height, width, escapement, orientation, weight int32, italic, un
 	return HFONT(ret)
 }
 
-func CreatePen(style, width int32, color COLORREF) HPEN {
+func createPen(style, width int32, color COLORREF) HPEN {
 	ret, _, _ := procCreatePen.Call(uintptr(style), uintptr(width), uintptr(color))
 	return HPEN(ret)
 }
 
-func Rectangle(hdc HDC, left, top, right, bottom int32) bool {
-	ret, _, _ := procRectangle.Call(uintptr(hdc), uintptr(left), uintptr(top), uintptr(right), uintptr(bottom))
-	return ret != 0
-}
-
-func RoundRect(hdc HDC, left, top, right, bottom, width, height int32) bool {
+func roundRect(hdc HDC, left, top, right, bottom, width, height int32) bool {
 	ret, _, _ := procRoundRect.Call(uintptr(hdc), uintptr(left), uintptr(top), uintptr(right), uintptr(bottom), uintptr(width), uintptr(height))
 	return ret != 0
 }
 
-func MoveToEx(hdc HDC, x, y int32, point *POINT) bool {
+func moveToEx(hdc HDC, x, y int32, point *POINT) bool {
 	ret, _, _ := procMoveToEx.Call(uintptr(hdc), uintptr(x), uintptr(y), uintptr(unsafe.Pointer(point)))
 	return ret != 0
 }
 
-func LineTo(hdc HDC, x, y int32) bool {
+func lineTo(hdc HDC, x, y int32) bool {
 	ret, _, _ := procLineTo.Call(uintptr(hdc), uintptr(x), uintptr(y))
 	return ret != 0
 }
 
-func Ellipse(hdc HDC, left, top, right, bottom int32) bool {
-	ret, _, _ := procEllipse.Call(uintptr(hdc), uintptr(left), uintptr(top), uintptr(right), uintptr(bottom))
-	return ret != 0
-}
-
-func GetStockObject(obj int32) HANDLE {
-	ret, _, _ := procGetStockObject.Call(uintptr(obj))
-	return HANDLE(ret)
-}
-
-func SetDCBrushColor(hdc HDC, color COLORREF) COLORREF {
-	ret, _, _ := procSetDCBrushColor.Call(uintptr(hdc), uintptr(color))
-	return COLORREF(ret)
-}
-
-func SetDCPenColor(hdc HDC, color COLORREF) COLORREF {
-	ret, _, _ := procSetDCPenColor.Call(uintptr(hdc), uintptr(color))
-	return COLORREF(ret)
-}
-
-// RGB creates a COLORREF from red, green, blue values
-func RGB(r, g, b byte) COLORREF {
+// rgb creates a COLORREF from red, green, blue values
+func rgb(r, g, b byte) COLORREF {
 	return COLORREF(uint32(r) | uint32(g)<<8 | uint32(b)<<16)
 }
 
-func SendMessage(hwnd HWND, msg uint32, wParam, lParam uintptr) uintptr {
+func sendMessage(hwnd HWND, msg uint32, wParam, lParam uintptr) uintptr {
 	ret, _, _ := procSendMessageW.Call(uintptr(hwnd), uintptr(msg), wParam, lParam)
 	return ret
 }
 
-func GetWindowText(hwnd HWND) string {
-	length, _, _ := procGetWindowTextLengthW.Call(uintptr(hwnd))
-	if length == 0 {
-		return ""
-	}
-	buf := make([]uint16, length+1)
-	procGetWindowTextW.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&buf[0])), length+1)
-	return syscall.UTF16ToString(buf)
-}
-
-func SetWindowText(hwnd HWND, text string) bool {
-	ret, _, _ := procSetWindowTextW.Call(uintptr(hwnd), uintptr(unsafe.Pointer(StringToUTF16Ptr(text))))
-	return ret != 0
-}
-
-// ComboBox helper functions
-func ComboBoxAddString(hwnd HWND, text string) int {
-	ret := SendMessage(hwnd, CB_ADDSTRING, 0, uintptr(unsafe.Pointer(StringToUTF16Ptr(text))))
-	return int(ret)
-}
-
-func ComboBoxSetCurSel(hwnd HWND, index int) int {
-	ret := SendMessage(hwnd, CB_SETCURSEL, uintptr(index), 0)
-	return int(ret)
-}
-
-func ComboBoxGetCurSel(hwnd HWND) int {
-	ret := SendMessage(hwnd, CB_GETCURSEL, 0, 0)
+func comboBoxGetCurSel(hwnd HWND) int {
+	ret := sendMessage(hwnd, CB_GETCURSEL, 0, 0)
 	return int(ret)
 }
 
 func ComboBoxGetText(hwnd HWND) string {
-	index := ComboBoxGetCurSel(hwnd)
+	index := comboBoxGetCurSel(hwnd)
 	if index < 0 {
 		return ""
 	}
-	length := SendMessage(hwnd, CB_GETLBTEXTLEN, uintptr(index), 0)
+	length := sendMessage(hwnd, CB_GETLBTEXTLEN, uintptr(index), 0)
 	if length == 0 {
 		return ""
 	}
 	buf := make([]uint16, length+1)
-	SendMessage(hwnd, CB_GETLBTEXT, uintptr(index), uintptr(unsafe.Pointer(&buf[0])))
+	sendMessage(hwnd, CB_GETLBTEXT, uintptr(index), uintptr(unsafe.Pointer(&buf[0])))
 	return syscall.UTF16ToString(buf)
 }
 
@@ -483,7 +364,7 @@ const (
 
 // CheckboxIsChecked returns true if the checkbox is checked
 func CheckboxIsChecked(hwnd HWND) bool {
-	ret := SendMessage(hwnd, BM_GETCHECK, 0, 0)
+	ret := sendMessage(hwnd, BM_GETCHECK, 0, 0)
 	return ret == BST_CHECKED
 }
 
@@ -493,32 +374,32 @@ func CheckboxSetChecked(hwnd HWND, checked bool) {
 	if checked {
 		val = BST_CHECKED
 	}
-	SendMessage(hwnd, BM_SETCHECK, val, 0)
+	sendMessage(hwnd, BM_SETCHECK, val, 0)
 }
 
 // ListBox helper functions
 func ListBoxAddString(hwnd HWND, text string) int {
-	ret := SendMessage(hwnd, LB_ADDSTRING, 0, uintptr(unsafe.Pointer(StringToUTF16Ptr(text))))
+	ret := sendMessage(hwnd, LB_ADDSTRING, 0, uintptr(unsafe.Pointer(StringToUTF16Ptr(text))))
 	return int(ret)
 }
 
 func ListBoxGetCurSel(hwnd HWND) int {
-	ret := SendMessage(hwnd, LB_GETCURSEL, 0, 0)
+	ret := sendMessage(hwnd, LB_GETCURSEL, 0, 0)
 	return int(ret)
 }
 
 func ListBoxSetCurSel(hwnd HWND, index int) int {
-	ret := SendMessage(hwnd, LB_SETCURSEL, uintptr(index), 0)
+	ret := sendMessage(hwnd, LB_SETCURSEL, uintptr(index), 0)
 	return int(ret)
 }
 
 func ListBoxGetCount(hwnd HWND) int {
-	ret := SendMessage(hwnd, LB_GETCOUNT, 0, 0)
+	ret := sendMessage(hwnd, LB_GETCOUNT, 0, 0)
 	return int(ret)
 }
 
 func ListBoxResetContent(hwnd HWND) {
-	SendMessage(hwnd, LB_RESETCONTENT, 0, 0)
+	sendMessage(hwnd, LB_RESETCONTENT, 0, 0)
 }
 
 // Popup menu constants
@@ -601,13 +482,6 @@ func (m *PopupMenu) Destroy() {
 	procDestroyMenu.Call(uintptr(m.handle))
 }
 
-// GetWindowRect gets the window rectangle in screen coordinates
-func GetWindowRect(hwnd HWND) RECT {
-	var rect RECT
-	procGetWindowRect.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&rect)))
-	return rect
-}
-
 // InitCommonControlsEx structure
 type INITCOMMONCONTROLSEX struct {
 	Size uint32
@@ -635,8 +509,8 @@ const (
 	ICC_LINK_CLASS         = 0x00008000
 )
 
-// InitCommonControls initializes common controls
-func InitCommonControls(classes uint32) bool {
+// initCommonControls initializes common controls
+func initCommonControls(classes uint32) bool {
 	icc := INITCOMMONCONTROLSEX{
 		Size: uint32(unsafe.Sizeof(INITCOMMONCONTROLSEX{})),
 		ICC:  classes,
@@ -647,7 +521,7 @@ func InitCommonControls(classes uint32) bool {
 
 // SetWindowTheme sets the visual theme for a window/control
 // Pass empty strings to use default theme, or specific theme names
-func SetWindowTheme(hwnd HWND, appName, idList string) error {
+func setWindowTheme(hwnd HWND, appName, idList string) error {
 	var appNamePtr, idListPtr *uint16
 	if appName != "" {
 		appNamePtr = StringToUTF16Ptr(appName)
@@ -664,78 +538,4 @@ func SetWindowTheme(hwnd HWND, appName, idList string) error {
 		return syscall.Errno(ret)
 	}
 	return nil
-}
-
-// DwmExtendFrameIntoClientArea extends the window frame into the client area
-func DwmExtendFrameIntoClientArea(hwnd HWND, margins *MARGINS) error {
-	ret, _, _ := procDwmExtendFrameIntoClientArea.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(margins)),
-	)
-	if ret != 0 {
-		return syscall.Errno(ret)
-	}
-	return nil
-}
-
-// DwmDefWindowProc handles DWM-related window messages
-func DwmDefWindowProc(hwnd HWND, msg uint32, wParam, lParam uintptr) (uintptr, bool) {
-	var result uintptr
-	ret, _, _ := procDwmDefWindowProc.Call(
-		uintptr(hwnd),
-		uintptr(msg),
-		wParam,
-		lParam,
-		uintptr(unsafe.Pointer(&result)),
-	)
-	return result, ret != 0
-}
-
-// System metrics constants
-const (
-	SM_CXFRAME        = 32
-	SM_CYFRAME        = 33
-	SM_CXPADDEDBORDER = 92
-	SM_CYCAPTION      = 4
-	SM_CXSIZE         = 30 // Width of caption buttons
-	SM_CYSIZE         = 31 // Height of caption buttons
-)
-
-// GetSystemMetrics retrieves system metrics
-func GetSystemMetrics(index int32) int32 {
-	ret, _, _ := procGetSystemMetrics.Call(uintptr(index))
-	return int32(ret)
-}
-
-// AdjustWindowRectEx calculates window size from client size
-func AdjustWindowRectEx(rect *RECT, style uint32, menu bool, exStyle uint32) bool {
-	var menuVal uintptr
-	if menu {
-		menuVal = 1
-	}
-	ret, _, _ := procAdjustWindowRectEx.Call(
-		uintptr(unsafe.Pointer(rect)),
-		uintptr(style),
-		menuVal,
-		uintptr(exStyle),
-	)
-	return ret != 0
-}
-
-// Redraw window constants
-const (
-	RDW_INVALIDATE = 0x0001
-	RDW_UPDATENOW  = 0x0100
-	RDW_FRAME      = 0x0400
-)
-
-// RedrawWindow redraws a window
-func RedrawWindow(hwnd HWND, rect *RECT, hrgn HANDLE, flags uint32) bool {
-	ret, _, _ := procRedrawWindow.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(rect)),
-		uintptr(hrgn),
-		uintptr(flags),
-	)
-	return ret != 0
 }

@@ -21,13 +21,13 @@ func WndProc(hwnd HWND, msg uintptr, wParam, lParam uintptr) uintptr {
 
 	switch uint32(msg) {
 	case WM_DESTROY:
-		PostQuitMessage(0)
+		postQuitMessage(0)
 		return 0
 	case WM_CLOSE:
-		PostQuitMessage(0)
+		postQuitMessage(0)
 		return 0
 	default:
-		return DefWindowProc(hwnd, uint32(msg), wParam, lParam)
+		return defWindowProc(hwnd, uint32(msg), wParam, lParam)
 	}
 }
 
@@ -35,7 +35,7 @@ var DefaultWndProc = syscall.NewCallback(WndProc)
 
 type Window struct {
 	Hwnd        HWND
-	OnCommand   func(id int)
+	OnCommand   func(id int, notifyCode int)
 	OnResize    func(width, height int32)
 	OnMouseMove func(x, y int32) bool // Returns true if handled
 	OnMouseDown func(x, y int32) bool // Returns true if handled
@@ -53,7 +53,7 @@ func NewWindow(title string, width, height int32) *Window {
 	// Initialize ALL common controls once with modern visual styles
 	if !comCtlInit {
 		// Initialize all control classes for full ComCtl32 support
-		InitCommonControls(
+		initCommonControls(
 			ICC_WIN95_CLASSES |
 				ICC_STANDARD_CLASSES |
 				ICC_BAR_CLASSES |
@@ -80,7 +80,7 @@ func NewWindow(title string, width, height int32) *Window {
 
 	if !registered {
 		// Load the application icon from resources
-		appIcon := LoadIcon(hInstance, MAKEINTRESOURCE(1)) // Resource ID 1 matches app.rc
+		appIcon := loadIcon(hInstance, uintptr(1)) // Resource ID 1 matches app.rc
 
 		wcx := WNDCLASSEX{
 			Size:       uint32(unsafe.Sizeof(WNDCLASSEX{})),
@@ -89,7 +89,7 @@ func NewWindow(title string, width, height int32) *Window {
 			Instance:   hInstance,
 			Background: HBRUSH(COLOR_BTNFACE + 1),
 			ClassName:  className,
-			Cursor:     LoadCursor(0, uintptr(IDC_ARROW)),
+			Cursor:     loadCursor(0, uintptr(IDC_ARROW)),
 			Icon:       appIcon, // Large icon (32x32)
 			IconSm:     appIcon, // Small icon (16x16) - using same icon, Windows will resize
 		}
@@ -120,7 +120,7 @@ func NewWindow(title string, width, height int32) *Window {
 	}
 
 	// Create modern Segoe UI font
-	w.font = CreateFont(
+	w.font = createFont(
 		-14, 0, 0, 0, FW_NORMAL,
 		0, 0, 0, DEFAULT_CHARSET,
 		OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
@@ -129,7 +129,7 @@ func NewWindow(title string, width, height int32) *Window {
 	)
 
 	// Create monospace font for code areas
-	w.monoFont = CreateFont(
+	w.monoFont = createFont(
 		-13, 0, 0, 0, FW_NORMAL,
 		0, 0, 0, DEFAULT_CHARSET,
 		OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
@@ -143,7 +143,8 @@ func NewWindow(title string, width, height int32) *Window {
 		case WM_COMMAND:
 			if w.OnCommand != nil {
 				id := int(wParam & 0xFFFF)
-				w.OnCommand(id)
+				notifyCode := int((wParam >> 16) & 0xFFFF)
+				w.OnCommand(id, notifyCode)
 				return 0, true
 			}
 
@@ -162,9 +163,9 @@ func NewWindow(title string, width, height int32) *Window {
 		case WM_PAINT:
 			if w.TabManager != nil {
 				var ps PAINTSTRUCT
-				hdc := BeginPaint(hwnd, &ps)
+				hdc := beginPaint(hwnd, &ps)
 				w.TabManager.Paint(hdc, w.width)
-				EndPaint(hwnd, &ps)
+				endPaint(hwnd, &ps)
 				return 0, true
 			}
 
@@ -213,7 +214,7 @@ func NewWindow(title string, width, height int32) *Window {
 		case WM_SETCURSOR:
 			// Let application set custom cursor
 			if w.OnSetCursor != nil {
-				x, y := GetCursorPosClient(w.Hwnd)
+				x, y := getCursorPosClient(w.Hwnd)
 				if w.OnSetCursor(x, y) {
 					return 1, true // TRUE - cursor was set
 				}
@@ -241,232 +242,18 @@ func (w *Window) EnableTabs() *TabManager {
 
 func (w *Window) Run() {
 	var msg MSG
-	for GetMessage(&msg, 0, 0, 0) > 0 {
-		TranslateMessage(&msg)
-		DispatchMessage(&msg)
+	for getMessage(&msg, 0, 0, 0) > 0 {
+		translateMessage(&msg)
+		dispatchMessage(&msg)
 	}
 }
 
 // applyFont applies the modern font to a control and enables visual styles
 func (w *Window) applyFont(hwnd HWND) {
 	if w.font != 0 {
-		SendMessage(hwnd, WM_SETFONT, uintptr(w.font), 1)
+		sendMessage(hwnd, WM_SETFONT, uintptr(w.font), 1)
 	}
 	// Enable modern visual styles for the control
-	SetWindowTheme(hwnd, "", "")
+	setWindowTheme(hwnd, "", "")
 	w.controls = append(w.controls, hwnd)
-}
-
-func (w *Window) CreateButton(text string, x, y, width, height int32, id int) HWND {
-	// Offset Y by tab height if tabs are enabled
-	yOffset := y
-	if w.TabManager != nil {
-		yOffset += w.TabManager.GetHeight()
-	}
-
-	hwnd := createWindowEx(
-		0,
-		StringToUTF16Ptr(WC_BUTTON),
-		StringToUTF16Ptr(text),
-		WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON,
-		x, yOffset, width, height,
-		w.Hwnd,
-		HMENU(uintptr(id)),
-		getModuleHandle(nil),
-		nil,
-	)
-	w.applyFont(hwnd)
-	return hwnd
-}
-
-func (w *Window) CreateInput(x, y, width, height int32) HWND {
-	// Offset Y by tab height if tabs are enabled
-	yOffset := y
-	if w.TabManager != nil {
-		yOffset += w.TabManager.GetHeight()
-	}
-
-	hwnd := createWindowEx(
-		0,
-		StringToUTF16Ptr(WC_EDIT),
-		nil,
-		WS_CHILD|WS_VISIBLE|WS_BORDER|ES_LEFT|ES_AUTOHSCROLL,
-		x, yOffset, width, height,
-		w.Hwnd,
-		0,
-		getModuleHandle(nil),
-		nil,
-	)
-	w.applyFont(hwnd)
-	return hwnd
-}
-
-// CreateComboBox creates a dropdown combo box
-func (w *Window) CreateComboBox(x, y, width, height int32, id int) HWND {
-	yOffset := y
-	if w.TabManager != nil {
-		yOffset += w.TabManager.GetHeight()
-	}
-
-	hwnd := createWindowEx(
-		0,
-		StringToUTF16Ptr(WC_COMBOBOX),
-		nil,
-		WS_CHILD|WS_VISIBLE|CBS_DROPDOWNLIST|CBS_HASSTRINGS,
-		x, yOffset, width, height,
-		w.Hwnd,
-		HMENU(uintptr(id)),
-		getModuleHandle(nil),
-		nil,
-	)
-	w.applyFont(hwnd)
-	return hwnd
-}
-
-// CreateMultilineEdit creates a multi-line text area
-func (w *Window) CreateMultilineEdit(x, y, width, height int32, readonly bool) HWND {
-	yOffset := y
-	if w.TabManager != nil {
-		yOffset += w.TabManager.GetHeight()
-	}
-
-	style := uint32(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN)
-	if readonly {
-		style |= ES_READONLY
-	}
-
-	hwnd := createWindowEx(
-		WS_EX_CLIENTEDGE,
-		StringToUTF16Ptr(WC_EDIT),
-		nil,
-		style,
-		x, yOffset, width, height,
-		w.Hwnd,
-		0,
-		getModuleHandle(nil),
-		nil,
-	)
-	w.applyFont(hwnd)
-	return hwnd
-}
-
-// CreateCodeEdit creates a multi-line text area with monospace font for code/JSON
-func (w *Window) CreateCodeEdit(x, y, width, height int32, readonly bool) HWND {
-	yOffset := y
-	if w.TabManager != nil {
-		yOffset += w.TabManager.GetHeight()
-	}
-
-	style := uint32(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | WS_HSCROLL | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN)
-	if readonly {
-		style |= ES_READONLY
-	}
-
-	hwnd := createWindowEx(
-		WS_EX_CLIENTEDGE,
-		StringToUTF16Ptr(WC_EDIT),
-		nil,
-		style,
-		x, yOffset, width, height,
-		w.Hwnd,
-		0,
-		getModuleHandle(nil),
-		nil,
-	)
-	// Apply monospace font
-	if w.monoFont != 0 {
-		SendMessage(hwnd, WM_SETFONT, uintptr(w.monoFont), 1)
-	}
-	// Enable modern visual styles
-	SetWindowTheme(hwnd, "", "")
-	w.controls = append(w.controls, hwnd)
-	return hwnd
-}
-
-// CreateLabel creates a static text label
-func (w *Window) CreateLabel(text string, x, y, width, height int32) HWND {
-	yOffset := y
-	if w.TabManager != nil {
-		yOffset += w.TabManager.GetHeight()
-	}
-
-	hwnd := createWindowEx(
-		0,
-		StringToUTF16Ptr(WC_STATIC),
-		StringToUTF16Ptr(text),
-		WS_CHILD|WS_VISIBLE|SS_LEFT,
-		x, yOffset, width, height,
-		w.Hwnd,
-		0,
-		getModuleHandle(nil),
-		nil,
-	)
-	w.applyFont(hwnd)
-	return hwnd
-}
-
-// CreateGroupBox creates a group box (frame with title)
-func (w *Window) CreateGroupBox(text string, x, y, width, height int32) HWND {
-	yOffset := y
-	if w.TabManager != nil {
-		yOffset += w.TabManager.GetHeight()
-	}
-
-	hwnd := createWindowEx(
-		0,
-		StringToUTF16Ptr(WC_BUTTON),
-		StringToUTF16Ptr(text),
-		WS_CHILD|WS_VISIBLE|0x00000007, // BS_GROUPBOX
-		x, yOffset, width, height,
-		w.Hwnd,
-		0,
-		getModuleHandle(nil),
-		nil,
-	)
-	w.applyFont(hwnd)
-	return hwnd
-}
-
-// CreateCheckbox creates a checkbox control
-func (w *Window) CreateCheckbox(text string, x, y, width, height int32, id int) HWND {
-	yOffset := y
-	if w.TabManager != nil {
-		yOffset += w.TabManager.GetHeight()
-	}
-
-	hwnd := createWindowEx(
-		0,
-		StringToUTF16Ptr(WC_BUTTON),
-		StringToUTF16Ptr(text),
-		WS_CHILD|WS_VISIBLE|0x00000003, // BS_AUTOCHECKBOX
-		x, yOffset, width, height,
-		w.Hwnd,
-		HMENU(uintptr(id)),
-		getModuleHandle(nil),
-		nil,
-	)
-	w.applyFont(hwnd)
-	return hwnd
-}
-
-// CreateListBox creates a listbox control
-func (w *Window) CreateListBox(x, y, width, height int32, id int) HWND {
-	yOffset := y
-	if w.TabManager != nil {
-		yOffset += w.TabManager.GetHeight()
-	}
-
-	hwnd := createWindowEx(
-		WS_EX_CLIENTEDGE,
-		StringToUTF16Ptr(WC_LISTBOX),
-		nil,
-		WS_CHILD|WS_VISIBLE|WS_VSCROLL|LBS_NOTIFY|LBS_HASSTRINGS|LBS_NOINTEGRALHEIGHT,
-		x, yOffset, width, height,
-		w.Hwnd,
-		HMENU(uintptr(id)),
-		getModuleHandle(nil),
-		nil,
-	)
-	w.applyFont(hwnd)
-	return hwnd
 }

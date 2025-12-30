@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
-	"sync/atomic"
 )
 
 // CertificateConfig holds client certificate settings
@@ -38,14 +36,12 @@ func (p *Project) AddRequest(req *Request) {
 	p.Requests = append(p.Requests, req)
 }
 
-// RemoveRequest removes a request by ID
-func (p *Project) RemoveRequest(id string) {
-	for i, req := range p.Requests {
-		if req.ID == id {
-			p.Requests = append(p.Requests[:i], p.Requests[i+1:]...)
-			break
-		}
+// RemoveRequest removes a request by index
+func (p *Project) RemoveRequest(index int) {
+	if index < 0 || index >= len(p.Requests) {
+		return
 	}
+	p.Requests = append(p.Requests[:index], p.Requests[index+1:]...)
 }
 
 // Save saves the project to a file
@@ -83,14 +79,4 @@ func LoadProject(filePath string) (*Project, error) {
 
 	project.filePath = filePath
 	return &project, nil
-}
-
-// Helper functions to avoid import in this file (will use strings package)
-var (
-	nextID int64 = 0
-)
-
-func generateID() string {
-	id := atomic.AddInt64(&nextID, 1)
-	return strconv.FormatInt(id, 10)
 }

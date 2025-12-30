@@ -1,7 +1,5 @@
 package win32
 
-import "fmt"
-
 // Tab represents a single tab in the tab bar
 type Tab struct {
 	ID    int
@@ -20,7 +18,7 @@ const (
 	HitMenuButton
 )
 
-// TabManager manages a tab bar integrated with title bar
+// TabManager manages a Chrome-style tab bar integrated with title bar
 type TabManager struct {
 	parentHwnd    HWND
 	tabs          []*Tab
@@ -50,7 +48,7 @@ type TabManager struct {
 	menuBtnSize     int32
 	captionBtnWidth int32 // Width of min/max/close buttons
 
-	// Colors
+	// Colors (Windows 11 style - Mica-like)
 	bgColor           COLORREF
 	bgColorInactive   COLORREF
 	tabBgColor        COLORREF
@@ -90,7 +88,7 @@ func NewTabManager(parent HWND) *TabManager {
 		hoverMenuBtn:  false,
 		mouseTracking: false,
 
-		// Title bar sizing
+		// Title bar sizing - match Windows 11 Chrome
 		titleBarHeight: 46, // Slightly taller for better tab spacing
 		captionHeight:  32,
 		borderSize:     8,
@@ -104,28 +102,28 @@ func NewTabManager(parent HWND) *TabManager {
 		addBtnSize:      28,
 		cornerRadius:    8,
 		menuBtnSize:     38,
-		captionBtnWidth: 46,
+		captionBtnWidth: 46, // Standard Windows caption button width
 
-		// Colors
-		bgColor:           RGB(243, 243, 243),
-		bgColorInactive:   RGB(249, 249, 249),
-		tabBgColor:        RGB(243, 243, 243),
-		tabActiveColor:    RGB(255, 255, 255),
-		tabHoverColor:     RGB(235, 235, 235),
-		textColor:         RGB(96, 96, 96),
-		textActiveColor:   RGB(32, 32, 32),
-		textInactiveColor: RGB(140, 140, 140),
-		closeBtnColor:     RGB(128, 128, 128),
-		closeBtnHover:     RGB(255, 255, 255),
-		closeBtnHoverBg:   RGB(196, 43, 28),
-		addBtnColor:       RGB(96, 96, 96),
-		addBtnHover:       RGB(32, 32, 32),
-		borderColor:       RGB(229, 229, 229),
-		shadowColor:       RGB(0, 0, 0),
+		// Windows 11 Mica-inspired colors (light theme)
+		bgColor:           rgb(243, 243, 243),
+		bgColorInactive:   rgb(249, 249, 249),
+		tabBgColor:        rgb(243, 243, 243),
+		tabActiveColor:    rgb(255, 255, 255),
+		tabHoverColor:     rgb(235, 235, 235),
+		textColor:         rgb(96, 96, 96),
+		textActiveColor:   rgb(32, 32, 32),
+		textInactiveColor: rgb(140, 140, 140),
+		closeBtnColor:     rgb(128, 128, 128),
+		closeBtnHover:     rgb(255, 255, 255),
+		closeBtnHoverBg:   rgb(196, 43, 28),
+		addBtnColor:       rgb(96, 96, 96),
+		addBtnHover:       rgb(32, 32, 32),
+		borderColor:       rgb(229, 229, 229),
+		shadowColor:       rgb(0, 0, 0),
 	}
 
 	// Create fonts
-	tm.font = CreateFont(
+	tm.font = createFont(
 		-12, 0, 0, 0, FW_NORMAL,
 		0, 0, 0, DEFAULT_CHARSET,
 		OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
@@ -241,7 +239,7 @@ func (tm *TabManager) Invalidate() {
 	if tm.parentHwnd != 0 {
 		// Get the actual client rect width for proper invalidation
 		var clientRect RECT
-		GetClientRect(tm.parentHwnd, &clientRect)
+		getClientRect(tm.parentHwnd, &clientRect)
 
 		rect := RECT{
 			Left:   0,
@@ -249,9 +247,9 @@ func (tm *TabManager) Invalidate() {
 			Right:  clientRect.Right, // Use actual window width
 			Bottom: tm.titleBarHeight,
 		}
-		InvalidateRect(tm.parentHwnd, &rect, true)
+		invalidateRect(tm.parentHwnd, &rect, true)
 		// Force immediate repaint to ensure tabs are redrawn when added/removed
-		UpdateWindow(tm.parentHwnd)
+		updateWindow(tm.parentHwnd)
 	}
 }
 
@@ -461,14 +459,14 @@ func (tm *TabManager) HandleClick(x, y int32, totalWidth int32) bool {
 func (tm *TabManager) Paint(hdc HDC, width int32) {
 	// Draw background
 	bgColor := tm.bgColor
-	bgBrush := CreateSolidBrush(bgColor)
+	bgBrush := createSolidBrush(bgColor)
 	bgRect := RECT{Left: 0, Top: 0, Right: width, Bottom: tm.titleBarHeight}
-	FillRect(hdc, &bgRect, bgBrush)
-	DeleteObject(HANDLE(bgBrush))
+	fillRect(hdc, &bgRect, bgBrush)
+	deleteObject(HANDLE(bgBrush))
 
 	// Set up drawing
-	SetBkMode(hdc, TRANSPARENT)
-	oldFont := SelectObject(hdc, HANDLE(tm.font))
+	setBkMode(hdc, TRANSPARENT)
+	oldFont := selectObject(hdc, HANDLE(tm.font))
 
 	// Draw each tab
 	for i, tab := range tm.tabs {
@@ -484,7 +482,7 @@ func (tm *TabManager) Paint(hdc HDC, width int32) {
 	// Draw subtle separator line at bottom
 	tm.drawBottomLine(hdc, width)
 
-	SelectObject(hdc, oldFont)
+	selectObject(hdc, oldFont)
 }
 
 // drawTab draws a single tab with modern styling
@@ -510,17 +508,17 @@ func (tm *TabManager) drawTab(hdc HDC, index int, tab *Tab, totalWidth int32) {
 
 	// Draw tab background for active or hover tabs
 	if isActive || isHover {
-		brush := CreateSolidBrush(bgColor)
-		pen := CreatePen(PS_SOLID, 1, bgColor)
-		oldBrush := SelectObject(hdc, HANDLE(brush))
-		oldPen := SelectObject(hdc, HANDLE(pen))
+		brush := createSolidBrush(bgColor)
+		pen := createPen(PS_SOLID, 1, bgColor)
+		oldBrush := selectObject(hdc, HANDLE(brush))
+		oldPen := selectObject(hdc, HANDLE(pen))
 
 		// Draw rounded rectangle for the tab, but don't extend beyond the separator line
 		// The separator line is at titleBarHeight - 1, so limit the bottom to that
 		maxBottom := tm.titleBarHeight - 1
 		roundedBottom := min(rect.Bottom+tm.cornerRadius, maxBottom)
 
-		RoundRect(hdc, rect.Left, rect.Top, rect.Right, roundedBottom, tm.cornerRadius*2, tm.cornerRadius*2)
+		roundRect(hdc, rect.Left, rect.Top, rect.Right, roundedBottom, tm.cornerRadius*2, tm.cornerRadius*2)
 
 		// Fill bottom part to make only top corners rounded, but respect the separator line
 		bottomRect := RECT{
@@ -529,16 +527,16 @@ func (tm *TabManager) drawTab(hdc HDC, index int, tab *Tab, totalWidth int32) {
 			Right:  rect.Right,
 			Bottom: maxBottom,
 		}
-		FillRect(hdc, &bottomRect, brush)
+		fillRect(hdc, &bottomRect, brush)
 
-		SelectObject(hdc, oldPen)
-		SelectObject(hdc, oldBrush)
-		DeleteObject(HANDLE(pen))
-		DeleteObject(HANDLE(brush))
+		selectObject(hdc, oldPen)
+		selectObject(hdc, oldBrush)
+		deleteObject(HANDLE(pen))
+		deleteObject(HANDLE(brush))
 	}
 
 	// Draw tab text
-	SetTextColor(hdc, textColor)
+	setTextColor(hdc, textColor)
 	textRect := RECT{
 		Left:   rect.Left + tm.tabPadding,
 		Top:    rect.Top,
@@ -551,8 +549,7 @@ func (tm *TabManager) drawTab(hdc HDC, index int, tab *Tab, totalWidth int32) {
 		textRect.Right -= tm.closeSize + 4
 	}
 
-	fmt.Println(tab.Title)
-	DrawText(hdc, tab.Title, &textRect, DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX)
+	drawText(hdc, tab.Title, &textRect, DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX)
 
 	// Draw close button if applicable
 	if isActive || isHover {
@@ -566,18 +563,18 @@ func (tm *TabManager) drawCloseButton(hdc HDC, tabRect RECT, isHover bool) {
 
 	// Draw hover background (rounded)
 	if isHover {
-		brush := CreateSolidBrush(tm.closeBtnHoverBg)
-		pen := CreatePen(PS_SOLID, 1, tm.closeBtnHoverBg)
-		oldBrush := SelectObject(hdc, HANDLE(brush))
-		oldPen := SelectObject(hdc, HANDLE(pen))
+		brush := createSolidBrush(tm.closeBtnHoverBg)
+		pen := createPen(PS_SOLID, 1, tm.closeBtnHoverBg)
+		oldBrush := selectObject(hdc, HANDLE(brush))
+		oldPen := selectObject(hdc, HANDLE(pen))
 
 		// Draw circular background
-		RoundRect(hdc, closeRect.Left-3, closeRect.Top-3, closeRect.Right+3, closeRect.Bottom+3, 8, 8)
+		roundRect(hdc, closeRect.Left-3, closeRect.Top-3, closeRect.Right+3, closeRect.Bottom+3, 8, 8)
 
-		SelectObject(hdc, oldPen)
-		SelectObject(hdc, oldBrush)
-		DeleteObject(HANDLE(pen))
-		DeleteObject(HANDLE(brush))
+		selectObject(hdc, oldPen)
+		selectObject(hdc, oldBrush)
+		deleteObject(HANDLE(pen))
+		deleteObject(HANDLE(brush))
 	}
 
 	// Draw X
@@ -588,18 +585,18 @@ func (tm *TabManager) drawCloseButton(hdc HDC, tabRect RECT, isHover bool) {
 		penColor = tm.closeBtnColor
 	}
 
-	pen := CreatePen(PS_SOLID, 1, penColor)
-	oldPen := SelectObject(hdc, HANDLE(pen))
+	pen := createPen(PS_SOLID, 1, penColor)
+	oldPen := selectObject(hdc, HANDLE(pen))
 
 	padding := int32(4)
 	// Draw X lines
-	MoveToEx(hdc, closeRect.Left+padding, closeRect.Top+padding, nil)
-	LineTo(hdc, closeRect.Right-padding+1, closeRect.Bottom-padding+1)
-	MoveToEx(hdc, closeRect.Right-padding, closeRect.Top+padding, nil)
-	LineTo(hdc, closeRect.Left+padding-1, closeRect.Bottom-padding+1)
+	moveToEx(hdc, closeRect.Left+padding, closeRect.Top+padding, nil)
+	lineTo(hdc, closeRect.Right-padding+1, closeRect.Bottom-padding+1)
+	moveToEx(hdc, closeRect.Right-padding, closeRect.Top+padding, nil)
+	lineTo(hdc, closeRect.Left+padding-1, closeRect.Bottom-padding+1)
 
-	SelectObject(hdc, oldPen)
-	DeleteObject(HANDLE(pen))
+	selectObject(hdc, oldPen)
+	deleteObject(HANDLE(pen))
 }
 
 // drawAddButton draws the + button for adding tabs
@@ -608,17 +605,17 @@ func (tm *TabManager) drawAddButton(hdc HDC, totalWidth int32) {
 
 	// Draw hover background
 	if tm.hoverAddBtn {
-		brush := CreateSolidBrush(tm.tabHoverColor)
-		pen := CreatePen(PS_SOLID, 1, tm.tabHoverColor)
-		oldBrush := SelectObject(hdc, HANDLE(brush))
-		oldPen := SelectObject(hdc, HANDLE(pen))
+		brush := createSolidBrush(tm.tabHoverColor)
+		pen := createPen(PS_SOLID, 1, tm.tabHoverColor)
+		oldBrush := selectObject(hdc, HANDLE(brush))
+		oldPen := selectObject(hdc, HANDLE(pen))
 
-		RoundRect(hdc, rect.Left, rect.Top, rect.Right, rect.Bottom, 6, 6)
+		roundRect(hdc, rect.Left, rect.Top, rect.Right, rect.Bottom, 6, 6)
 
-		SelectObject(hdc, oldPen)
-		SelectObject(hdc, oldBrush)
-		DeleteObject(HANDLE(pen))
-		DeleteObject(HANDLE(brush))
+		selectObject(hdc, oldPen)
+		selectObject(hdc, oldBrush)
+		deleteObject(HANDLE(pen))
+		deleteObject(HANDLE(brush))
 	}
 
 	// Draw + sign
@@ -629,23 +626,23 @@ func (tm *TabManager) drawAddButton(hdc HDC, totalWidth int32) {
 		penColor = tm.addBtnColor
 	}
 
-	pen := CreatePen(PS_SOLID, 1, penColor)
-	oldPen := SelectObject(hdc, HANDLE(pen))
+	pen := createPen(PS_SOLID, 1, penColor)
+	oldPen := selectObject(hdc, HANDLE(pen))
 
 	centerX := (rect.Left + rect.Right) / 2
 	centerY := (rect.Top + rect.Bottom) / 2
 	size := int32(5)
 
 	// Horizontal line
-	MoveToEx(hdc, centerX-size, centerY, nil)
-	LineTo(hdc, centerX+size+1, centerY)
+	moveToEx(hdc, centerX-size, centerY, nil)
+	lineTo(hdc, centerX+size+1, centerY)
 
 	// Vertical line
-	MoveToEx(hdc, centerX, centerY-size, nil)
-	LineTo(hdc, centerX, centerY+size+1)
+	moveToEx(hdc, centerX, centerY-size, nil)
+	lineTo(hdc, centerX, centerY+size+1)
 
-	SelectObject(hdc, oldPen)
-	DeleteObject(HANDLE(pen))
+	selectObject(hdc, oldPen)
+	deleteObject(HANDLE(pen))
 }
 
 // drawMenuButton draws the hamburger menu button
@@ -654,17 +651,17 @@ func (tm *TabManager) drawMenuButton(hdc HDC, totalWidth int32) {
 
 	// Draw hover background
 	if tm.hoverMenuBtn {
-		brush := CreateSolidBrush(tm.tabHoverColor)
-		pen := CreatePen(PS_SOLID, 1, tm.tabHoverColor)
-		oldBrush := SelectObject(hdc, HANDLE(brush))
-		oldPen := SelectObject(hdc, HANDLE(pen))
+		brush := createSolidBrush(tm.tabHoverColor)
+		pen := createPen(PS_SOLID, 1, tm.tabHoverColor)
+		oldBrush := selectObject(hdc, HANDLE(brush))
+		oldPen := selectObject(hdc, HANDLE(pen))
 
-		RoundRect(hdc, rect.Left, rect.Top, rect.Right, rect.Bottom, 6, 6)
+		roundRect(hdc, rect.Left, rect.Top, rect.Right, rect.Bottom, 6, 6)
 
-		SelectObject(hdc, oldPen)
-		SelectObject(hdc, oldBrush)
-		DeleteObject(HANDLE(pen))
-		DeleteObject(HANDLE(brush))
+		selectObject(hdc, oldPen)
+		selectObject(hdc, oldBrush)
+		deleteObject(HANDLE(pen))
+		deleteObject(HANDLE(brush))
 	}
 
 	// Draw three horizontal lines (hamburger)
@@ -675,8 +672,8 @@ func (tm *TabManager) drawMenuButton(hdc HDC, totalWidth int32) {
 		penColor = tm.addBtnColor
 	}
 
-	pen := CreatePen(PS_SOLID, 1, penColor)
-	oldPen := SelectObject(hdc, HANDLE(pen))
+	pen := createPen(PS_SOLID, 1, penColor)
+	oldPen := selectObject(hdc, HANDLE(pen))
 
 	centerX := (rect.Left + rect.Right) / 2
 	centerY := (rect.Top + rect.Bottom) / 2
@@ -686,18 +683,18 @@ func (tm *TabManager) drawMenuButton(hdc HDC, totalWidth int32) {
 	// Three horizontal lines
 	for i := int32(-1); i <= 1; i++ {
 		y := centerY + i*spacing
-		MoveToEx(hdc, centerX-width, y, nil)
-		LineTo(hdc, centerX+width+1, y)
+		moveToEx(hdc, centerX-width, y, nil)
+		lineTo(hdc, centerX+width+1, y)
 	}
 
-	SelectObject(hdc, oldPen)
-	DeleteObject(HANDLE(pen))
+	selectObject(hdc, oldPen)
+	deleteObject(HANDLE(pen))
 }
 
 // drawBottomLine draws a subtle separator line at the bottom of the tab bar
 func (tm *TabManager) drawBottomLine(hdc HDC, totalWidth int32) {
-	pen := CreatePen(PS_SOLID, 1, tm.borderColor)
-	oldPen := SelectObject(hdc, HANDLE(pen))
+	pen := createPen(PS_SOLID, 1, tm.borderColor)
+	oldPen := selectObject(hdc, HANDLE(pen))
 
 	// Find active tab rect to skip drawing line under it
 	var activeRect *RECT
@@ -713,20 +710,20 @@ func (tm *TabManager) drawBottomLine(hdc HDC, totalWidth int32) {
 
 	if activeRect == nil {
 		// No active tab, draw full line
-		MoveToEx(hdc, 0, y, nil)
-		LineTo(hdc, totalWidth, y)
+		moveToEx(hdc, 0, y, nil)
+		lineTo(hdc, totalWidth, y)
 	} else {
 		// Draw line with gap for active tab
 		if activeRect.Left > 0 {
-			MoveToEx(hdc, 0, y, nil)
-			LineTo(hdc, activeRect.Left, y)
+			moveToEx(hdc, 0, y, nil)
+			lineTo(hdc, activeRect.Left, y)
 		}
 		if activeRect.Right < totalWidth {
-			MoveToEx(hdc, activeRect.Right, y, nil)
-			LineTo(hdc, totalWidth, y)
+			moveToEx(hdc, activeRect.Right, y, nil)
+			lineTo(hdc, totalWidth, y)
 		}
 	}
 
-	SelectObject(hdc, oldPen)
-	DeleteObject(HANDLE(pen))
+	selectObject(hdc, oldPen)
+	deleteObject(HANDLE(pen))
 }

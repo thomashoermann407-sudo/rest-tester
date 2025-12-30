@@ -7,52 +7,76 @@ import (
 	"hoermi.com/rest-test/win32"
 )
 
-// Global control handles - Request Panel
+// Layout constants for consistent UI spacing
+const (
+	// Common spacing
+	layoutPadding   = int32(12)
+	layoutGapSmall  = int32(5)
+	layoutGapMedium = int32(10)
+	layoutGapLarge  = int32(30)
+
+	// Standard control heights
+	layoutLabelHeight = int32(20)
+	layoutInputHeight = int32(26)
+	layoutButtonWidth = int32(120)
+
+	// Welcome panel uses larger controls
+	layoutWelcomeLabelHeight = int32(24)
+	layoutWelcomeInputHeight = int32(32)
+	layoutWelcomeButtonWidth = int32(150)
+
+	// Default window size
+	defaultWindowWidth  = int32(1100)
+	defaultWindowHeight = int32(850)
+)
+
+// ProjectWindow holds all UI state for the main application window
 type ProjectWindow struct {
 	mainWindow     *win32.Window
 	tabs           *win32.TabManager
-	methodCombo    win32.HWND
-	urlInput       win32.HWND
-	headersInput   win32.HWND
-	queryInput     win32.HWND
-	bodyInput      win32.HWND
-	responseOutput win32.HWND
-	statusLabel    win32.HWND
-	sendBtn        win32.HWND
+	methodCombo    *win32.ClickControl
+	urlInput       *win32.Control
+	headersInput   *win32.Control
+	queryInput     *win32.Control
+	bodyInput      *win32.Control
+	responseOutput *win32.Control
+	statusLabel    *win32.Control
+	sendBtn        *win32.ClickControl
 	// Labels for request panel
-	methodLabel   win32.HWND
-	urlLabel      win32.HWND
-	headersLabel  win32.HWND
-	queryLabel    win32.HWND
-	bodyLabel     win32.HWND
-	responseLabel win32.HWND
+	methodLabel   *win32.Control
+	urlLabel      *win32.Control
+	headersLabel  *win32.Control
+	queryLabel    *win32.Control
+	bodyLabel     *win32.Control
+	responseLabel *win32.Control
 
-	// Global control handles - Project View Panel
-	projectListBox win32.HWND
-	openReqBtn     win32.HWND
-	deleteReqBtn   win32.HWND
-	projectInfo    win32.HWND
-	saveBtn        win32.HWND
+	// Project View Panel controls
+	projectListBox *win32.ClickControl
+	openReqBtn     *win32.ClickControl
+	deleteReqBtn   *win32.ClickControl
+	projectInfo    *win32.Control
+	saveBtn        *win32.ClickControl
 
-	// Global control handles - New Tab Panel
-	newTabTitle   win32.HWND
-	newTabNewBtn  win32.HWND
-	newTabOpenBtn win32.HWND
-	recentLabel   win32.HWND
-	recentListBox win32.HWND
+	// New Tab Panel controls
+	newTabTitle   *win32.Control
+	newTabNewBtn  *win32.ClickControl
+	newTabOpenBtn *win32.ClickControl
+	recentLabel   *win32.Control
+	recentListBox *win32.ClickControl
 
-	// Global control handles - Settings Panel
-	certInput     win32.HWND
-	keyInput      win32.HWND
-	caInput       win32.HWND
-	skipVerifyChk win32.HWND
-	certBtn       win32.HWND
-	keyBtn        win32.HWND
-	caBtn         win32.HWND
-	certLabel     win32.HWND
-	keyLabel      win32.HWND
-	caLabel       win32.HWND
-	settingsTitle win32.HWND
+	// Settings Panel controls
+	certInput       *win32.Control
+	keyInput        *win32.Control
+	caInput         *win32.Control
+	skipVerifyChk   *win32.ClickControl
+	certBtn         *win32.ClickControl
+	keyBtn          *win32.ClickControl
+	caBtn           *win32.ClickControl
+	certLabel       *win32.Control
+	keyLabel        *win32.Control
+	caLabel         *win32.Control
+	settingsTitle   *win32.Control
+	saveSettingsBtn *win32.ClickControl
 
 	// Layout state for resizing
 	windowWidth       int32
@@ -60,164 +84,139 @@ type ProjectWindow struct {
 	paramsHeightRatio float32
 	bodyHeightRatio   float32
 
-	panels *Panels
+	panels Panels
 
 	// Current loaded project
 	currentProject *Project
+	// Global settings
+	settings *Settings
 }
 
 func NewProjectWindow() *ProjectWindow {
-	mainWindow := win32.NewWindow("REST Tester", 1100, 850)
+	mainWindow := win32.NewWindow("REST Tester", defaultWindowWidth, defaultWindowHeight)
 	tabs := mainWindow.EnableTabs()
-	return &ProjectWindow{
+
+	pw := &ProjectWindow{
 		mainWindow:        mainWindow,
 		tabs:              tabs,
-		windowWidth:       1100,
-		windowHeight:      850,
-		paramsHeightRatio: 0.10, // 10% of available height for params/headers
-		bodyHeightRatio:   0.15, // 15% for body
+		windowWidth:       defaultWindowWidth,
+		windowHeight:      defaultWindowHeight,
+		paramsHeightRatio: 0.10,
+		bodyHeightRatio:   0.15,
 	}
+	return pw
 }
 
 func (pw *ProjectWindow) createRequestPanel() {
-	padding := int32(12)
-	labelHeight := int32(20)
-	inputHeight := int32(26)
-	y := int32(12) // Start right after tab bar (tab bar height handled by control offset)
+	y := layoutPadding
 
 	// === Request Row ===
-	pw.methodLabel = pw.mainWindow.CreateLabel("Method", padding, y+3, 50, labelHeight)
-	pw.methodCombo = pw.mainWindow.CreateComboBox(padding+55, y, 90, 200, ID_METHOD_COMBO)
-	win32.ComboBoxAddString(pw.methodCombo, "GET")
-	win32.ComboBoxAddString(pw.methodCombo, "POST")
-	win32.ComboBoxAddString(pw.methodCombo, "PUT")
-	win32.ComboBoxAddString(pw.methodCombo, "PATCH")
-	win32.ComboBoxAddString(pw.methodCombo, "DELETE")
-	win32.ComboBoxAddString(pw.methodCombo, "HEAD")
-	win32.ComboBoxAddString(pw.methodCombo, "OPTIONS")
-	win32.ComboBoxSetCurSel(pw.methodCombo, 0)
+	// Note: Actual positions are recalculated by resizeRequestPanel()
+	methodLabelWidth := int32(50)
+	methodComboWidth := int32(90)
+	urlLabelWidth := int32(30)
+	sendBtnWidth := int32(90)
 
-	// URL input
-	pw.urlLabel = pw.mainWindow.CreateLabel("URL", padding+155, y+3, 30, labelHeight)
-	pw.urlInput = pw.mainWindow.CreateInput(padding+190, y, 680, inputHeight)
+	pw.methodLabel = pw.mainWindow.CreateLabel("Method", layoutPadding, y+3, methodLabelWidth, layoutLabelHeight)
+	pw.methodCombo = pw.mainWindow.CreateComboBox(layoutPadding+methodLabelWidth+layoutGapSmall, y, methodComboWidth, 200)
+	for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"} {
+		pw.methodCombo.ComboBoxAddString(method)
+	}
+	pw.methodCombo.ComboBoxSetCurSel(0)
 
-	// Send button
-	pw.sendBtn = pw.mainWindow.CreateButton("  Send  ", padding+885, y, 90, inputHeight+2, ID_SEND_BTN)
+	urlX := layoutPadding + methodLabelWidth + layoutGapSmall + methodComboWidth + layoutPadding
+	pw.urlLabel = pw.mainWindow.CreateLabel("URL", urlX, y+3, urlLabelWidth, layoutLabelHeight)
+	pw.urlInput = pw.mainWindow.CreateInput(urlX+urlLabelWidth+layoutGapSmall, y, 680, layoutInputHeight)
+	pw.sendBtn = pw.mainWindow.CreateButton("Send", defaultWindowWidth-layoutPadding-sendBtnWidth, y, sendBtnWidth, layoutInputHeight)
 
-	// === Query Parameters Section ===
-	y += inputHeight + padding
-	pw.queryLabel = pw.mainWindow.CreateLabel("Query Parameters (one per line: key=value)", padding, y, 300, labelHeight)
-	y += labelHeight + 3
-	pw.queryInput = pw.mainWindow.CreateCodeEdit(padding, y, 520, 70, false)
+	// === Query Parameters & Headers Section ===
+	y += layoutInputHeight + layoutPadding
+	pw.queryLabel = pw.mainWindow.CreateLabel("Query Parameters (one per line: key=value)", layoutPadding, y, 300, layoutLabelHeight)
+	y += layoutLabelHeight + layoutGapSmall
+	pw.queryInput = pw.mainWindow.CreateCodeEdit(layoutPadding, y, 520, 70, false)
 
-	// === Headers Section ===
-	pw.headersLabel = pw.mainWindow.CreateLabel("Headers (one per line: Header: value)", padding+540, y-labelHeight-3, 300, labelHeight)
-	pw.headersInput = pw.mainWindow.CreateCodeEdit(padding+540, y, 520, 70, false)
+	halfWidth := (defaultWindowWidth - layoutPadding*3) / 2
+	pw.headersLabel = pw.mainWindow.CreateLabel("Headers (one per line: Header: value)", layoutPadding+halfWidth+layoutPadding, y-layoutLabelHeight-layoutGapSmall, 300, layoutLabelHeight)
+	pw.headersInput = pw.mainWindow.CreateCodeEdit(layoutPadding+halfWidth+layoutPadding, y, 520, 70, false)
 
 	// === Body Section ===
-	y += 70 + padding
-	pw.bodyLabel = pw.mainWindow.CreateLabel("Request Body", padding, y, 150, labelHeight)
-	y += labelHeight + 3
-	pw.bodyInput = pw.mainWindow.CreateCodeEdit(padding, y, 1050, 120, false)
+	y += 70 + layoutPadding
+	pw.bodyLabel = pw.mainWindow.CreateLabel("Request Body", layoutPadding, y, 150, layoutLabelHeight)
+	y += layoutLabelHeight + layoutGapSmall
+	pw.bodyInput = pw.mainWindow.CreateCodeEdit(layoutPadding, y, defaultWindowWidth-layoutPadding*2, 120, false)
 
 	// === Response Section ===
-	y += 120 + padding
-	pw.responseLabel = pw.mainWindow.CreateLabel("Response", padding, y, 80, labelHeight)
-	pw.statusLabel = pw.mainWindow.CreateLabel("Ready", padding+90, y, 400, labelHeight)
-	y += labelHeight + 5
-	pw.responseOutput = pw.mainWindow.CreateCodeEdit(padding, y, 1050, 350, true)
+	y += 120 + layoutPadding
+	pw.responseLabel = pw.mainWindow.CreateLabel("Response", layoutPadding, y, 80, layoutLabelHeight)
+	pw.statusLabel = pw.mainWindow.CreateLabel("Ready", layoutPadding+90, y, 400, layoutLabelHeight)
+	y += layoutLabelHeight + layoutGapSmall
+	pw.responseOutput = pw.mainWindow.CreateCodeEdit(layoutPadding, y, defaultWindowWidth-layoutPadding*2, 350, true)
 }
 
 func (pw *ProjectWindow) createProjectViewPanel() {
-	padding := int32(12)
-	labelHeight := int32(20)
-	inputHeight := int32(26)
-	y := int32(50) // After toolbar
+	y := layoutPadding * 4 // Below tab bar area
+	listWidth := int32(500)
+	listHeight := int32(500)
 
-	// Project info
-	pw.projectInfo = pw.mainWindow.CreateLabel("Double-click a request to open it in a new tab", padding, y, 500, labelHeight)
-	y += labelHeight + padding
+	pw.projectInfo = pw.mainWindow.CreateLabel("Double-click a request to open it in a new tab", layoutPadding, y, listWidth, layoutLabelHeight)
+	y += layoutLabelHeight + layoutPadding
 
-	// List of requests
-	pw.projectListBox = pw.mainWindow.CreateListBox(padding, y, 500, 500, ID_PROJECT_LIST)
+	pw.projectListBox = pw.mainWindow.CreateListBox(layoutPadding, y, listWidth, listHeight)
 
-	// Action buttons
-	pw.openReqBtn = pw.mainWindow.CreateButton("Open in Tab", padding+520, y, 120, inputHeight, ID_OPEN_REQ_BTN)
-	pw.deleteReqBtn = pw.mainWindow.CreateButton("Delete", padding+520, y+inputHeight+5, 120, inputHeight, ID_DELETE_REQ_BTN)
-	pw.saveBtn = pw.mainWindow.CreateButton("Save Project", padding+520, y+inputHeight*2+15, 120, inputHeight, ID_SAVE_BTN)
-
-	// Initially hide this panel
-	win32.ShowWindow(pw.projectInfo, win32.SW_HIDE)
-	win32.ShowWindow(pw.projectListBox, win32.SW_HIDE)
-	win32.ShowWindow(pw.openReqBtn, win32.SW_HIDE)
-	win32.ShowWindow(pw.deleteReqBtn, win32.SW_HIDE)
-	win32.ShowWindow(pw.saveBtn, win32.SW_HIDE)
+	// Action buttons to the right of the list
+	btnX := layoutPadding + listWidth + layoutPadding
+	pw.openReqBtn = pw.mainWindow.CreateButton("Open in Tab", btnX, y, layoutButtonWidth, layoutInputHeight)
+	pw.deleteReqBtn = pw.mainWindow.CreateButton("Delete", btnX, y+layoutInputHeight+layoutGapSmall, layoutButtonWidth, layoutInputHeight)
+	pw.saveBtn = pw.mainWindow.CreateButton("Save Project", btnX, y+layoutInputHeight*2+layoutPadding, layoutButtonWidth, layoutInputHeight)
+	// Visibility is managed by panels.go initPanels()
 }
 
 func (pw *ProjectWindow) createSettingsPanel() {
-	padding := int32(12)
-	labelHeight := int32(20)
-	inputHeight := int32(26)
-	y := int32(50) // After toolbar
+	y := layoutPadding * 4 // Below tab bar area
+	inputWidth := int32(400)
+	browseBtnWidth := int32(30)
 
-	// === Client Certificate Section ===
-	pw.settingsTitle = pw.mainWindow.CreateLabel("Global Settings", padding, y, 200, labelHeight+4)
-	y += labelHeight + padding
+	pw.settingsTitle = pw.mainWindow.CreateLabel("Global Settings", layoutPadding, y, 200, layoutLabelHeight+4)
+	y += layoutLabelHeight + layoutPadding
 
-	pw.certLabel = pw.mainWindow.CreateLabel("Client Certificate (PEM)", padding, y, 200, labelHeight)
-	y += labelHeight + 3
-	pw.certInput = pw.mainWindow.CreateInput(padding, y, 400, inputHeight)
-	pw.certBtn = pw.mainWindow.CreateButton("...", padding+405, y, 30, inputHeight, ID_CERT_BTN)
-	y += inputHeight + padding
+	pw.certLabel = pw.mainWindow.CreateLabel("Client Certificate (PEM)", layoutPadding, y, 200, layoutLabelHeight)
+	y += layoutLabelHeight + layoutGapSmall
+	pw.certInput = pw.mainWindow.CreateInput(layoutPadding, y, inputWidth, layoutInputHeight)
+	pw.certBtn = pw.mainWindow.CreateButton("...", layoutPadding+inputWidth+layoutGapSmall, y, browseBtnWidth, layoutInputHeight)
+	y += layoutInputHeight + layoutPadding
 
-	pw.keyLabel = pw.mainWindow.CreateLabel("Private Key (PEM)", padding, y, 200, labelHeight)
-	y += labelHeight + 3
-	pw.keyInput = pw.mainWindow.CreateInput(padding, y, 400, inputHeight)
-	pw.keyBtn = pw.mainWindow.CreateButton("...", padding+405, y, 30, inputHeight, ID_KEY_BTN)
-	y += inputHeight + padding
+	pw.keyLabel = pw.mainWindow.CreateLabel("Private Key (PEM)", layoutPadding, y, 200, layoutLabelHeight)
+	y += layoutLabelHeight + layoutGapSmall
+	pw.keyInput = pw.mainWindow.CreateInput(layoutPadding, y, inputWidth, layoutInputHeight)
+	pw.keyBtn = pw.mainWindow.CreateButton("...", layoutPadding+inputWidth+layoutGapSmall, y, browseBtnWidth, layoutInputHeight)
+	y += layoutInputHeight + layoutPadding
 
-	pw.caLabel = pw.mainWindow.CreateLabel("CA Bundle (optional)", padding, y, 200, labelHeight)
-	y += labelHeight + 3
-	pw.caInput = pw.mainWindow.CreateInput(padding, y, 400, inputHeight)
-	pw.caBtn = pw.mainWindow.CreateButton("...", padding+405, y, 30, inputHeight, ID_CA_BTN)
-	y += inputHeight + padding
+	pw.caLabel = pw.mainWindow.CreateLabel("CA Bundle (optional)", layoutPadding, y, 200, layoutLabelHeight)
+	y += layoutLabelHeight + layoutGapSmall
+	pw.caInput = pw.mainWindow.CreateInput(layoutPadding, y, inputWidth, layoutInputHeight)
+	pw.caBtn = pw.mainWindow.CreateButton("...", layoutPadding+inputWidth+layoutGapSmall, y, browseBtnWidth, layoutInputHeight)
+	y += layoutInputHeight + layoutPadding
 
-	pw.skipVerifyChk = pw.mainWindow.CreateCheckbox("Skip TLS Verification (insecure)", padding, y, 280, inputHeight, ID_SKIP_VERIFY)
-
-	// Initially hide this panel
-	win32.ShowWindow(pw.settingsTitle, win32.SW_HIDE)
-	win32.ShowWindow(pw.certLabel, win32.SW_HIDE)
-	win32.ShowWindow(pw.certInput, win32.SW_HIDE)
-	win32.ShowWindow(pw.certBtn, win32.SW_HIDE)
-	win32.ShowWindow(pw.keyLabel, win32.SW_HIDE)
-	win32.ShowWindow(pw.keyInput, win32.SW_HIDE)
-	win32.ShowWindow(pw.keyBtn, win32.SW_HIDE)
-	win32.ShowWindow(pw.caLabel, win32.SW_HIDE)
-	win32.ShowWindow(pw.caInput, win32.SW_HIDE)
-	win32.ShowWindow(pw.caBtn, win32.SW_HIDE)
-	win32.ShowWindow(pw.skipVerifyChk, win32.SW_HIDE)
+	pw.skipVerifyChk = pw.mainWindow.CreateCheckbox("Skip TLS Verification (insecure)", layoutPadding, y, 280, layoutInputHeight)
+	y += layoutInputHeight + layoutPadding
+	pw.saveSettingsBtn = pw.mainWindow.CreateButton("Save Settings", layoutPadding, y, layoutButtonWidth, layoutInputHeight)
 }
 
 func (pw *ProjectWindow) createNewTabPanel() {
-	padding := int32(12)
-	labelHeight := int32(24)
-	inputHeight := int32(32)
-	btnWidth := int32(150)
-	y := int32(80) // After toolbar, centered area
+	y := layoutPadding * 6 // More space at top for welcome area
+	recentListWidth := int32(400)
+	recentListHeight := int32(300)
 
-	// Welcome title
-	pw.newTabTitle = pw.mainWindow.CreateLabel("REST Tester - Start", padding, y, 400, labelHeight+10)
-	y += labelHeight + 30
+	pw.newTabTitle = pw.mainWindow.CreateLabel("REST Tester - Start", layoutPadding, y, 400, layoutWelcomeLabelHeight+layoutGapMedium)
+	y += layoutWelcomeLabelHeight + layoutGapLarge
 
-	// New and Open buttons
-	pw.newTabNewBtn = pw.mainWindow.CreateButton("📄 New Project", padding, y, btnWidth, inputHeight, ID_NEW_BTN)
-	pw.newTabOpenBtn = pw.mainWindow.CreateButton("📂 Open Project", padding+btnWidth+10, y, btnWidth, inputHeight, ID_OPEN_BTN)
-	y += inputHeight + 30
+	pw.newTabNewBtn = pw.mainWindow.CreateButton("📄 New Project", layoutPadding, y, layoutWelcomeButtonWidth, layoutWelcomeInputHeight)
+	pw.newTabOpenBtn = pw.mainWindow.CreateButton("📂 Open Project", layoutPadding+layoutWelcomeButtonWidth+layoutGapMedium, y, layoutWelcomeButtonWidth, layoutWelcomeInputHeight)
+	y += layoutWelcomeInputHeight + layoutGapLarge
 
-	// Recent projects section
-	pw.recentLabel = pw.mainWindow.CreateLabel("Recent Projects:", padding, y, 200, labelHeight)
-	y += labelHeight + 5
-	pw.recentListBox = pw.mainWindow.CreateListBox(padding, y, 400, 300, ID_RECENT_LIST)
+	pw.recentLabel = pw.mainWindow.CreateLabel("Recent Projects:", layoutPadding, y, 200, layoutWelcomeLabelHeight)
+	y += layoutWelcomeLabelHeight + layoutGapSmall
+	pw.recentListBox = pw.mainWindow.CreateListBox(layoutPadding, y, recentListWidth, recentListHeight)
 }
 
 // handleResize is called when the window is resized
@@ -226,121 +225,124 @@ func (pw *ProjectWindow) handleResize(width, height int32) {
 	pw.windowHeight = height
 	pw.tabs.SetWidth(width)
 
-	// Get current active tab
 	if pw.tabs != nil {
 		pw.resizeRequestPanel()
-		// TODO: Add resize handlers for other panel types if needed
 	}
 }
 
 // resizeRequestPanel adjusts all controls in the request panel based on window size
 func (pw *ProjectWindow) resizeRequestPanel() {
-	padding := int32(12)
-	labelHeight := int32(20)
-	inputHeight := int32(26)
-	tabHeight := int32(46) // Tab bar height (matches TabManager.titleBarHeight)
+	tabHeight := pw.tabs.GetHeight()
 
 	// Calculate available height (excluding tab bar and padding)
-	availableHeight := pw.windowHeight - tabHeight - padding*5 - labelHeight*5 - inputHeight
+	availableHeight := pw.windowHeight - tabHeight - layoutPadding*5 - layoutLabelHeight*5 - layoutInputHeight
 
 	// Calculate panel heights based on ratios
-	paramsHeight := max(int32(float32(availableHeight)*pw.paramsHeightRatio), 60)
+	minParamsHeight := int32(60)
+	minBodyHeight := int32(80)
+	minResponseHeight := int32(150)
 
-	bodyHeight := max(int32(float32(availableHeight)*pw.bodyHeightRatio), 80)
+	paramsHeight := max(int32(float32(availableHeight)*pw.paramsHeightRatio), minParamsHeight)
+	bodyHeight := max(int32(float32(availableHeight)*pw.bodyHeightRatio), minBodyHeight)
+	responseHeight := max(availableHeight-paramsHeight-bodyHeight, minResponseHeight)
 
-	responseHeight := max(availableHeight-paramsHeight-bodyHeight, 150)
+	availableWidth := pw.windowWidth - layoutPadding*2
 
-	// Calculate available width
-	availableWidth := pw.windowWidth - padding*2
-
-	// Start position (relative to client area including tab bar offset)
-	y := tabHeight + padding
+	y := tabHeight + layoutPadding
 
 	// === Request Row (fixed height) ===
-	// Method combo
-	win32.MoveWindow(pw.methodCombo, padding+55, y, 90, 200, true)
+	methodLabelWidth := int32(50)
+	methodComboWidth := int32(90)
+	sendBtnWidth := int32(90)
 
-	// URL input - expand with window width
-	urlWidth := availableWidth - 330 // Leave space for method, label, and send button
-	win32.MoveWindow(pw.urlInput, padding+190, y, urlWidth, inputHeight, true)
+	pw.methodCombo.MoveWindow(layoutPadding+methodLabelWidth+layoutGapSmall, y, methodComboWidth, 200, true)
 
-	// Send button - move to right edge
-	win32.MoveWindow(pw.sendBtn, padding+190+urlWidth+15, y, 90, inputHeight+2, true)
+	urlLabelWidth := int32(30)
+	urlX := layoutPadding + methodLabelWidth + layoutGapSmall + methodComboWidth + layoutPadding + urlLabelWidth + layoutGapSmall
+	urlWidth := availableWidth - methodLabelWidth - methodComboWidth - urlLabelWidth - sendBtnWidth - layoutPadding*2 - layoutGapSmall*2
+	pw.urlInput.MoveWindow(urlX, y, urlWidth, layoutInputHeight, true)
+	pw.sendBtn.MoveWindow(pw.windowWidth-layoutPadding-sendBtnWidth, y, sendBtnWidth, layoutInputHeight, true)
 
 	// === Query Parameters & Headers Section ===
-	y += inputHeight + padding
-	y += labelHeight + 3
+	y += layoutInputHeight + layoutPadding
+	y += layoutLabelHeight + layoutGapSmall
 
 	// Split width 50/50 for params and headers
-	halfWidth := (availableWidth - padding) / 2
+	halfWidth := (availableWidth - layoutPadding) / 2
 
-	// Query parameters (left half)
-	win32.MoveWindow(pw.queryInput, padding, y, halfWidth, paramsHeight, true)
-
-	// Headers (right half)
-	win32.MoveWindow(pw.headersInput, padding+halfWidth+padding, y, halfWidth, paramsHeight, true)
+	pw.queryInput.MoveWindow(layoutPadding, y, halfWidth, paramsHeight, true)
+	pw.headersInput.MoveWindow(layoutPadding+halfWidth+layoutPadding, y, halfWidth, paramsHeight, true)
 
 	// === Body Section ===
-	y += paramsHeight + padding
-	y += labelHeight + 3
-	win32.MoveWindow(pw.bodyInput, padding, y, availableWidth, bodyHeight, true)
+	y += paramsHeight + layoutPadding
+	y += layoutLabelHeight + layoutGapSmall
+	pw.bodyInput.MoveWindow(layoutPadding, y, availableWidth, bodyHeight, true)
 
 	// === Response Section ===
-	y += bodyHeight + padding
-	y += labelHeight + 5
-	win32.MoveWindow(pw.responseOutput, padding, y, availableWidth, responseHeight, true)
+	y += bodyHeight + layoutPadding
+	y += layoutLabelHeight + layoutGapSmall
+	pw.responseOutput.MoveWindow(layoutPadding, y, availableWidth, responseHeight, true)
 }
 
-func (pw *ProjectWindow) handleCommand(id int) {
+func (pw *ProjectWindow) handleCommand(id int, notifyCode int) {
 	switch id {
-	case ID_SEND_BTN:
+	case pw.sendBtn.ID:
 		// Get the bound request from the current tab
 		request := pw.getBoundRequest()
 		if request == nil {
-			win32.SetWindowText(pw.statusLabel, "❌ No request")
-			win32.SetWindowText(pw.responseOutput, "Error: No request bound to this tab")
+			pw.statusLabel.SetText("❌ No request")
+			pw.responseOutput.SetText("Error: No request bound to this tab")
 			return
 		}
 
 		// Sync UI values to the bound request before sending
 		pw.syncUIToRequest(request)
 
-		pw.saveCertificateConfig()
-		win32.SetWindowText(pw.statusLabel, "⏳ Sending...")
-		win32.SetWindowText(pw.responseOutput, "")
-		go sendRequest(request, func(response string, err error) {
+		pw.statusLabel.SetText("⏳ Sending...")
+		pw.responseOutput.SetText("")
+		go sendRequest(request, pw.settings, func(response string, err error) {
 			if err != nil {
-				win32.SetWindowText(pw.statusLabel, "❌ Error")
-				win32.SetWindowText(pw.responseOutput, fmt.Sprintf("Error sending request:\r\n%v", err))
+				pw.statusLabel.SetText("❌ Error")
+				pw.responseOutput.SetText(fmt.Sprintf("Error sending request:\r\n%v", err))
 				return
 			}
-			win32.SetWindowText(pw.statusLabel, "✅ Success")
-			win32.SetWindowText(pw.responseOutput, response)
+			pw.statusLabel.SetText("✅ Success")
+			pw.responseOutput.SetText(response)
 		})
-	case ID_NEW_BTN:
+	case pw.newTabNewBtn.ID:
 		pw.newProject()
-	case ID_OPEN_BTN:
+	case pw.newTabOpenBtn.ID:
 		pw.openProject()
-	case ID_SAVE_BTN:
+	case pw.saveBtn.ID:
 		pw.saveProject()
-	case ID_CERT_BTN:
+	case pw.certBtn.ID:
 		if path, ok := win32.OpenFileDialog(pw.mainWindow.Hwnd, "Select Certificate", "PEM Files (*.pem;*.crt)|*.pem;*.crt|All Files (*.*)|*.*|", "pem"); ok {
-			win32.SetWindowText(pw.certInput, path)
+			pw.certInput.SetText(path)
 		}
-	case ID_KEY_BTN:
+	case pw.keyBtn.ID:
 		if path, ok := win32.OpenFileDialog(pw.mainWindow.Hwnd, "Select Private Key", "PEM Files (*.pem;*.key)|*.pem;*.key|All Files (*.*)|*.*|", "pem"); ok {
-			win32.SetWindowText(pw.keyInput, path)
+			pw.keyInput.SetText(path)
 		}
-	case ID_CA_BTN:
+	case pw.caBtn.ID:
 		if path, ok := win32.OpenFileDialog(pw.mainWindow.Hwnd, "Select CA Bundle", "PEM Files (*.pem;*.crt)|*.pem;*.crt|All Files (*.*)|*.*|", "pem"); ok {
-			win32.SetWindowText(pw.caInput, path)
+			pw.caInput.SetText(path)
 		}
-	case ID_OPEN_REQ_BTN:
+	case pw.openReqBtn.ID:
 		pw.openSelectedRequest()
-	case ID_DELETE_REQ_BTN:
+	case pw.deleteReqBtn.ID:
 		pw.deleteSelectedRequest()
-	case ID_RECENT_LIST:
-		pw.openRecentProject()
+	case pw.projectListBox.ID:
+		// Open request on double-click
+		if notifyCode == win32.LBN_DBLCLK {
+			pw.openSelectedRequest()
+		}
+	case pw.recentListBox.ID:
+		// Only open on double-click, not selection change
+		if notifyCode == win32.LBN_DBLCLK {
+			pw.openRecentProject()
+		}
+	case pw.saveSettingsBtn.ID:
+		pw.saveCertificateConfig()
 	}
 }
 
@@ -376,11 +378,11 @@ func (pw *ProjectWindow) showContextMenu() {
 
 // openRecentProject opens a project from the recent list
 func (pw *ProjectWindow) openRecentProject() {
-	idx := win32.ListBoxGetCurSel(pw.recentListBox)
-	if idx < 0 || idx >= len(globalSettings.RecentProjects) {
+	idx := win32.ListBoxGetCurSel(pw.recentListBox.Hwnd)
+	if idx < 0 || idx >= len(pw.settings.RecentProjects) {
 		return
 	}
-	pw.openProjectFromPath(globalSettings.RecentProjects[idx])
+	pw.openProjectFromPath(pw.settings.RecentProjects[idx])
 }
 
 // addNewRequestTab creates a new request tab
@@ -420,10 +422,8 @@ func (pw *ProjectWindow) deleteSelectedRequest() {
 		return
 	}
 
-	req := pw.currentProject.Requests[idx]
-
 	// Remove from project
-	pw.currentProject.RemoveRequest(req.ID)
+	pw.currentProject.RemoveRequest(idx)
 	pw.updateProjectList()
 }
 
@@ -457,7 +457,7 @@ func (pw *ProjectWindow) openProjectFromPath(filePath string) {
 	}
 
 	// Add to recent projects
-	globalSettings.addRecentProject(filePath)
+	pw.settings.addRecentProject(filePath)
 
 	pw.currentProject = project
 
@@ -468,7 +468,6 @@ func (pw *ProjectWindow) openProjectFromPath(filePath string) {
 
 // saveProject saves the current project to file
 func (pw *ProjectWindow) saveProject() {
-	pw.saveCertificateConfig()
 
 	defaultName := pw.currentProject.Name + ".rtp"
 	filePath, ok := win32.SaveFileDialog(
@@ -498,33 +497,34 @@ func (pw *ProjectWindow) saveProject() {
 
 // saveCertificateConfig saves the certificate settings from UI to project
 func (pw *ProjectWindow) saveCertificateConfig() {
-	if globalSettings.Certificate == nil {
-		globalSettings.Certificate = &CertificateConfig{}
+	if pw.settings.Certificate == nil {
+		pw.settings.Certificate = &CertificateConfig{}
 	}
-	globalSettings.Certificate.CertFile = win32.GetWindowText(pw.certInput)
-	globalSettings.Certificate.KeyFile = win32.GetWindowText(pw.keyInput)
-	globalSettings.Certificate.CACertFile = win32.GetWindowText(pw.caInput)
-	globalSettings.Certificate.SkipVerify = win32.CheckboxIsChecked(pw.skipVerifyChk)
+	pw.settings.Certificate.CertFile = pw.certInput.GetText()
+	pw.settings.Certificate.KeyFile = pw.keyInput.GetText()
+	pw.settings.Certificate.CACertFile = pw.caInput.GetText()
+	pw.settings.Certificate.SkipVerify = win32.CheckboxIsChecked(pw.skipVerifyChk.Hwnd)
+	pw.settings.save()
 }
 
 // loadCertificateUI loads certificate settings into the UI
 func (pw *ProjectWindow) loadCertificateUI() {
-	if globalSettings.Certificate == nil {
+	if pw.settings.Certificate == nil {
 		pw.clearCertificateUI()
 		return
 	}
-	win32.SetWindowText(pw.certInput, globalSettings.Certificate.CertFile)
-	win32.SetWindowText(pw.keyInput, globalSettings.Certificate.KeyFile)
-	win32.SetWindowText(pw.caInput, globalSettings.Certificate.CACertFile)
-	win32.CheckboxSetChecked(pw.skipVerifyChk, globalSettings.Certificate.SkipVerify)
+	pw.certInput.SetText(pw.settings.Certificate.CertFile)
+	pw.keyInput.SetText(pw.settings.Certificate.KeyFile)
+	pw.caInput.SetText(pw.settings.Certificate.CACertFile)
+	win32.CheckboxSetChecked(pw.skipVerifyChk.Hwnd, pw.settings.Certificate.SkipVerify)
 }
 
 // clearCertificateUI clears all certificate input fields
 func (pw *ProjectWindow) clearCertificateUI() {
-	win32.SetWindowText(pw.certInput, "")
-	win32.SetWindowText(pw.keyInput, "")
-	win32.SetWindowText(pw.caInput, "")
-	win32.CheckboxSetChecked(pw.skipVerifyChk, false)
+	pw.certInput.SetText("")
+	pw.keyInput.SetText("")
+	pw.caInput.SetText("")
+	win32.CheckboxSetChecked(pw.skipVerifyChk.Hwnd, false)
 }
 
 // CreateRequestTab creates a new request tab bound to a Request object
@@ -570,7 +570,7 @@ func (pw *ProjectWindow) CreateProjectViewTab() int {
 	}
 	tabID := pw.tabs.AddTab("📁 Project", content)
 	pw.tabs.SetActiveTab(tabID)
-	pw.panels.showProjectViewPanel()
+	pw.panels.show(PanelProjectView)
 	pw.updateProjectList()
 	return tabID
 }
@@ -578,11 +578,11 @@ func (pw *ProjectWindow) CreateProjectViewTab() int {
 // CreateSettingsTab creates the global settings tab
 func (pw *ProjectWindow) CreateSettingsTab() int {
 	content := &SettingsTabContent{
-		SkipVerify: globalSettings.Certificate != nil && globalSettings.Certificate.SkipVerify,
+		SkipVerify: pw.settings.Certificate != nil && pw.settings.Certificate.SkipVerify,
 	}
 	tabID := pw.tabs.AddTab("⚙ Settings", content)
 	pw.tabs.SetActiveTab(tabID)
-	pw.panels.showSettingsPanel()
+	pw.panels.show(PanelSettings)
 	pw.loadCertificateUI()
 	return tabID
 }
@@ -613,13 +613,13 @@ func (pw *ProjectWindow) SaveCurrentTabState() {
 	switch c := content.(type) {
 	case *RequestTabContent:
 		// Capture current UI values
-		c.Method = win32.ComboBoxGetText(pw.methodCombo)
-		c.URL = win32.GetWindowText(pw.urlInput)
-		c.Headers = win32.GetWindowText(pw.headersInput)
-		c.QueryParams = win32.GetWindowText(pw.queryInput)
-		c.Body = win32.GetWindowText(pw.bodyInput)
-		c.Response = win32.GetWindowText(pw.responseOutput)
-		c.Status = win32.GetWindowText(pw.statusLabel)
+		c.Method = win32.ComboBoxGetText(pw.methodCombo.Hwnd)
+		c.URL = pw.urlInput.GetText()
+		c.Headers = pw.headersInput.GetText()
+		c.QueryParams = pw.queryInput.GetText()
+		c.Body = pw.bodyInput.GetText()
+		c.Response = pw.responseOutput.GetText()
+		c.Status = pw.statusLabel.GetText()
 
 		// Also sync to the bound Request object for persistence
 		if c.BoundRequest != nil {
@@ -628,18 +628,18 @@ func (pw *ProjectWindow) SaveCurrentTabState() {
 
 	case *ProjectViewTabContent:
 		// Capture selected request index
-		c.SelectedIndex = win32.ListBoxGetCurSel(pw.projectListBox)
+		c.SelectedIndex = win32.ListBoxGetCurSel(pw.projectListBox.Hwnd)
 
 	case *SettingsTabContent:
 		// Capture certificate settings from UI
-		c.CertFile = win32.GetWindowText(pw.certInput)
-		c.KeyFile = win32.GetWindowText(pw.keyInput)
-		c.CACertFile = win32.GetWindowText(pw.caInput)
-		c.SkipVerify = win32.CheckboxIsChecked(pw.skipVerifyChk)
+		c.CertFile = pw.certInput.GetText()
+		c.KeyFile = pw.keyInput.GetText()
+		c.CACertFile = pw.caInput.GetText()
+		c.SkipVerify = win32.CheckboxIsChecked(pw.skipVerifyChk.Hwnd)
 
 	case *NewTabTabContent:
 		// Capture selected recent project index
-		c.SelectedRecentIndex = win32.ListBoxGetCurSel(pw.recentListBox)
+		c.SelectedRecentIndex = win32.ListBoxGetCurSel(pw.recentListBox.Hwnd)
 	}
 }
 
@@ -651,19 +651,19 @@ func (pw *ProjectWindow) RestoreTabState(content TabContent) {
 
 	switch c := content.(type) {
 	case *RequestTabContent:
-		pw.panels.showRequestPanel()
+		pw.panels.show(PanelRequest)
 		pw.restoreRequestState(c)
 		pw.resizeRequestPanel() // Apply current window size to controls
 	case *ProjectViewTabContent:
-		pw.panels.showProjectViewPanel()
+		pw.panels.show(PanelProjectView)
 		pw.updateProjectList()
 		pw.restoreProjectViewState(c)
 	case *SettingsTabContent:
-		pw.panels.showSettingsPanel()
+		pw.panels.show(PanelSettings)
 		pw.loadCertificateUI()
 		pw.restoreSettingsState(c)
 	case *NewTabTabContent:
-		pw.panels.showWelcomePanel()
+		pw.panels.show(PanelWelcome)
 		pw.updateRecentList()
 	}
 }
@@ -678,17 +678,17 @@ func (pw *ProjectWindow) restoreRequestState(content *RequestTabContent) {
 	methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
 	for i, m := range methods {
 		if m == content.Method {
-			win32.ComboBoxSetCurSel(pw.methodCombo, i)
+			pw.methodCombo.ComboBoxSetCurSel(i)
 			break
 		}
 	}
 
-	win32.SetWindowText(pw.urlInput, content.URL)
-	win32.SetWindowText(pw.headersInput, content.Headers)
-	win32.SetWindowText(pw.queryInput, content.QueryParams)
-	win32.SetWindowText(pw.bodyInput, content.Body)
-	win32.SetWindowText(pw.responseOutput, content.Response)
-	win32.SetWindowText(pw.statusLabel, content.Status)
+	pw.urlInput.SetText(content.URL)
+	pw.headersInput.SetText(content.Headers)
+	pw.queryInput.SetText(content.QueryParams)
+	pw.bodyInput.SetText(content.Body)
+	pw.responseOutput.SetText(content.Response)
+	pw.statusLabel.SetText(content.Status)
 }
 
 // restoreProjectViewState restores project view tab state to UI
@@ -699,7 +699,7 @@ func (pw *ProjectWindow) restoreProjectViewState(content *ProjectViewTabContent)
 
 	// Restore listbox selection
 	if content.SelectedIndex >= 0 {
-		win32.ListBoxSetCurSel(pw.projectListBox, content.SelectedIndex)
+		win32.ListBoxSetCurSel(pw.projectListBox.Hwnd, content.SelectedIndex)
 	}
 }
 
@@ -709,20 +709,20 @@ func (pw *ProjectWindow) restoreSettingsState(content *SettingsTabContent) {
 		return
 	}
 
-	win32.SetWindowText(pw.certInput, content.CertFile)
-	win32.SetWindowText(pw.keyInput, content.KeyFile)
-	win32.SetWindowText(pw.caInput, content.CACertFile)
-	win32.CheckboxSetChecked(pw.skipVerifyChk, content.SkipVerify)
+	pw.certInput.SetText(content.CertFile)
+	pw.keyInput.SetText(content.KeyFile)
+	pw.caInput.SetText(content.CACertFile)
+	win32.CheckboxSetChecked(pw.skipVerifyChk.Hwnd, content.SkipVerify)
 }
 
 // updateProjectList refreshes the project structure list
 func (pw *ProjectWindow) updateProjectList() {
-	if pw.projectListBox == 0 || pw.currentProject == nil {
+	if pw.projectListBox == nil || pw.currentProject == nil {
 		return
 	}
 
 	// Clear the listbox
-	win32.ListBoxResetContent(pw.projectListBox)
+	win32.ListBoxResetContent(pw.projectListBox.Hwnd)
 
 	// Add all requests
 	for _, req := range pw.currentProject.Requests {
@@ -734,24 +734,29 @@ func (pw *ProjectWindow) updateProjectList() {
 			}
 			displayText = req.Method + " " + shortURL
 		}
-		win32.ListBoxAddString(pw.projectListBox, displayText)
+		win32.ListBoxAddString(pw.projectListBox.Hwnd, displayText)
 	}
 }
 
 // updateRecentList refreshes the recently used projects list
 func (pw *ProjectWindow) updateRecentList() {
-	if pw.recentListBox == 0 {
+	if pw.recentListBox == nil {
 		return
 	}
-	win32.ListBoxResetContent(pw.recentListBox)
-	for _, path := range globalSettings.RecentProjects {
-		win32.ListBoxAddString(pw.recentListBox, path)
+	win32.ListBoxResetContent(pw.recentListBox.Hwnd)
+	for _, path := range pw.settings.RecentProjects {
+		// Display only the filename, not the full path
+		displayName := path
+		if idx := strings.LastIndex(path, "\\"); idx >= 0 {
+			displayName = path[idx+1:]
+		}
+		win32.ListBoxAddString(pw.recentListBox.Hwnd, displayName)
 	}
 }
 
 // getSelectedRequestIndex returns the selected index in project list
 func (pw *ProjectWindow) getSelectedRequestIndex() int {
-	return win32.ListBoxGetCurSel(pw.projectListBox)
+	return win32.ListBoxGetCurSel(pw.projectListBox.Hwnd)
 }
 
 // getBoundRequest returns the Request bound to the current tab, or nil if not a request tab
@@ -776,18 +781,18 @@ func (pw *ProjectWindow) syncUIToRequest(req *Request) {
 	}
 
 	// Get method from combo box
-	req.Method = win32.ComboBoxGetText(pw.methodCombo)
+	req.Method = win32.ComboBoxGetText(pw.methodCombo.Hwnd)
 
 	// Get URL
-	req.URL = win32.GetWindowText(pw.urlInput)
+	req.URL = pw.urlInput.GetText()
 
 	// Get body
-	req.Body = win32.GetWindowText(pw.bodyInput)
+	req.Body = pw.bodyInput.GetText()
 
 	// Parse headers from text to map
 	req.Headers = make(map[string]string)
-	headersText := win32.GetWindowText(pw.headersInput)
-	for _, line := range strings.Split(headersText, "\n") {
+	headersText := pw.headersInput.GetText()
+	for line := range strings.SplitSeq(headersText, "\n") {
 		line = strings.TrimSpace(strings.ReplaceAll(line, "\r", ""))
 		if line == "" {
 			continue
@@ -800,8 +805,8 @@ func (pw *ProjectWindow) syncUIToRequest(req *Request) {
 
 	// Parse query params from text to map
 	req.QueryParams = make(map[string]string)
-	queryText := win32.GetWindowText(pw.queryInput)
-	for _, line := range strings.Split(queryText, "\n") {
+	queryText := pw.queryInput.GetText()
+	for line := range strings.SplitSeq(queryText, "\n") {
 		line = strings.TrimSpace(strings.ReplaceAll(line, "\r", ""))
 		if line == "" {
 			continue

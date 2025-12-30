@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"encoding/xml"
 	"io"
@@ -9,32 +8,11 @@ import (
 	"strings"
 )
 
-// Control IDs
-// Todo: make ids dependent on window
-const (
-	ID_METHOD_COMBO   = 100
-	ID_SEND_BTN       = 101
-	ID_NEW_BTN        = 102
-	ID_OPEN_BTN       = 103
-	ID_SAVE_BTN       = 104
-	ID_CERT_BTN       = 105
-	ID_KEY_BTN        = 106
-	ID_CA_BTN         = 107
-	ID_SKIP_VERIFY    = 108
-	ID_PROJECT_LIST   = 109
-	ID_PROJECT_BTN    = 110
-	ID_SETTINGS_BTN   = 111
-	ID_OPEN_REQ_BTN   = 112
-	ID_DELETE_REQ_BTN = 113
-	ID_RECENT_LIST    = 114
-)
-
 func main() {
 	runtime.LockOSThread()
 
-	InitGlobalSettings()
-
 	pw := NewProjectWindow()
+	pw.settings = InitSettings()
 	tabs := pw.tabs
 	// Handle tab events
 	tabs.OnBeforeTabChange = func(oldTabID int) {
@@ -63,7 +41,7 @@ func main() {
 	pw.createNewTabPanel()
 
 	// Initialize panel management
-	initPanels(pw)
+	pw.panels = initPanels(pw)
 
 	// Wire up the tab manager's menu button callback
 	tabs.OnMenuClick = pw.showContextMenu
@@ -123,23 +101,18 @@ func formatJSON(input string) (string, bool) {
 		return "", false
 	}
 
-	var buf bytes.Buffer
-	encoder := json.NewEncoder(&buf)
-	encoder.SetIndent("", "  ")
-	encoder.SetEscapeHTML(false)
-
-	if err := encoder.Encode(data); err != nil {
+	formatted, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
 		return "", false
 	}
 
 	// Convert to Windows line endings
-	result := strings.TrimSuffix(buf.String(), "\n")
-	return strings.ReplaceAll(result, "\n", "\r\n"), true
+	return strings.ReplaceAll(string(formatted), "\n", "\r\n"), true
 }
 
 // formatXML pretty-prints XML
 func formatXML(input string) (string, bool) {
-	var buf bytes.Buffer
+	var buf strings.Builder
 	decoder := xml.NewDecoder(strings.NewReader(input))
 	encoder := xml.NewEncoder(&buf)
 	encoder.Indent("", "  ")
@@ -162,8 +135,7 @@ func formatXML(input string) (string, bool) {
 	}
 
 	// Convert to Windows line endings
-	result := buf.String()
-	return strings.ReplaceAll(result, "\n", "\r\n"), true
+	return strings.ReplaceAll(buf.String(), "\n", "\r\n"), true
 }
 
 // buildURLWithQueryParams appends query parameters to a URL
