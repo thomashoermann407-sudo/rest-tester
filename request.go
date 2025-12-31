@@ -11,14 +11,41 @@ import (
 	"strings"
 )
 
+type Params map[string]string
+
+func (p Params) Format() string {
+	var parts []string
+	for key, value := range p {
+		parts = append(parts, fmt.Sprintf("%s: %s", key, value))
+	}
+	return strings.Join(parts, "\r\n")
+}
+func ParseParams(input string) Params {
+	params := make(Params)
+	lines := strings.SplitSeq(input, "\r\n")
+	for line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) == 2 {
+			name := strings.TrimSpace(parts[0])
+			value := strings.TrimSpace(parts[1])
+			params[name] = value
+		}
+	}
+	return params
+}
+
 // Request represents a single HTTP request configuration
 type Request struct {
-	Name        string            `json:"name"`
-	Method      string            `json:"method"`
-	URL         string            `json:"url"`
-	Headers     map[string]string `json:"headers"`
-	QueryParams map[string]string `json:"queryParams"`
-	Body        string            `json:"body"`
+	Name        string `json:"name"`
+	Method      string `json:"method"`
+	URL         string `json:"url"`
+	Headers     Params `json:"headers"`
+	QueryParams Params `json:"queryParams"`
+	Body        string `json:"body"`
 }
 
 // NewRequest creates a new request with default values

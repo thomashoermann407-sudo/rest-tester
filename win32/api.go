@@ -31,7 +31,6 @@ var (
 	procGetClientRect        = user32.NewProc("GetClientRect")
 	procInvalidateRect       = user32.NewProc("InvalidateRect")
 	procGetCursorPos         = user32.NewProc("GetCursorPos")
-	procScreenToClient       = user32.NewProc("ScreenToClient")
 	procMoveWindow           = user32.NewProc("MoveWindow")
 	procFillRect             = user32.NewProc("FillRect")
 	procDrawTextW            = user32.NewProc("DrawTextW")
@@ -136,16 +135,6 @@ func defWindowProc(hwnd HWND, msg uint32, wParam, lParam uintptr) uintptr {
 	return ret
 }
 
-func MessageBox(hwnd HWND, text, caption string, type_ uint32) int32 {
-	ret, _, _ := procMessageBoxW.Call(
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(StringToUTF16Ptr(text))),
-		uintptr(unsafe.Pointer(StringToUTF16Ptr(caption))),
-		uintptr(type_),
-	)
-	return int32(ret)
-}
-
 func beginPaint(hwnd HWND, ps *PAINTSTRUCT) HDC {
 	ret, _, _ := procBeginPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(ps)))
 	return HDC(ret)
@@ -168,26 +157,6 @@ func invalidateRect(hwnd HWND, rect *RECT, erase bool) bool {
 	}
 	ret, _, _ := procInvalidateRect.Call(uintptr(hwnd), uintptr(unsafe.Pointer(rect)), eraseVal)
 	return ret != 0
-}
-
-func getCursorPos(point *POINT) bool {
-	ret, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(point)))
-	return ret != 0
-}
-
-func screenToClient(hwnd HWND, point *POINT) bool {
-	ret, _, _ := procScreenToClient.Call(uintptr(hwnd), uintptr(unsafe.Pointer(point)))
-	return ret != 0
-}
-
-// getCursorPosClient returns cursor position in client coordinates
-func getCursorPosClient(hwnd HWND) (int32, int32) {
-	var pt POINT
-	if getCursorPos(&pt) {
-		screenToClient(hwnd, &pt)
-		return pt.X, pt.Y
-	}
-	return 0, 0
 }
 
 func fillRect(hdc HDC, rect *RECT, brush HBRUSH) int32 {
@@ -264,222 +233,6 @@ func rgb(r, g, b byte) COLORREF {
 func sendMessage(hwnd HWND, msg uint32, wParam, lParam uintptr) uintptr {
 	ret, _, _ := procSendMessageW.Call(uintptr(hwnd), uintptr(msg), wParam, lParam)
 	return ret
-}
-
-func comboBoxGetCurSel(hwnd HWND) int {
-	ret := sendMessage(hwnd, CB_GETCURSEL, 0, 0)
-	return int(ret)
-}
-
-func ComboBoxGetText(hwnd HWND) string {
-	index := comboBoxGetCurSel(hwnd)
-	if index < 0 {
-		return ""
-	}
-	length := sendMessage(hwnd, CB_GETLBTEXTLEN, uintptr(index), 0)
-	if length == 0 {
-		return ""
-	}
-	buf := make([]uint16, length+1)
-	sendMessage(hwnd, CB_GETLBTEXT, uintptr(index), uintptr(unsafe.Pointer(&buf[0])))
-	return syscall.UTF16ToString(buf)
-}
-
-// OpenFileDialog shows a file open dialog and returns the selected file path
-func OpenFileDialog(owner HWND, title, filter, defaultExt string) (string, bool) {
-	var ofn OPENFILENAME
-	fileNameBuf := make([]uint16, 260)
-
-	// Convert filter string: "Description\0*.ext\0\0"
-	filterBuf := make([]uint16, len(filter)+2)
-	copy(filterBuf, syscall.StringToUTF16(filter))
-	// Replace | with null
-	for i := range filterBuf {
-		if filterBuf[i] == '|' {
-			filterBuf[i] = 0
-		}
-	}
-
-	ofn.StructSize = uint32(unsafe.Sizeof(ofn))
-	ofn.Owner = owner
-	ofn.Filter = &filterBuf[0]
-	ofn.File = &fileNameBuf[0]
-	ofn.MaxFile = uint32(len(fileNameBuf))
-	ofn.Title = StringToUTF16Ptr(title)
-	ofn.DefExt = StringToUTF16Ptr(defaultExt)
-	ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER
-
-	ret, _, _ := procGetOpenFileNameW.Call(uintptr(unsafe.Pointer(&ofn)))
-	if ret == 0 {
-		return "", false
-	}
-
-	return syscall.UTF16ToString(fileNameBuf), true
-}
-
-// SaveFileDialog shows a file save dialog and returns the selected file path
-func SaveFileDialog(owner HWND, title, filter, defaultExt, defaultName string) (string, bool) {
-	var ofn OPENFILENAME
-	fileNameBuf := make([]uint16, 260)
-
-	// Copy default name to buffer
-	if defaultName != "" {
-		defaultNameUTF16 := syscall.StringToUTF16(defaultName)
-		copy(fileNameBuf, defaultNameUTF16)
-	}
-
-	// Convert filter string: "Description\0*.ext\0\0"
-	filterBuf := make([]uint16, len(filter)+2)
-	copy(filterBuf, syscall.StringToUTF16(filter))
-	// Replace | with null
-	for i := range filterBuf {
-		if filterBuf[i] == '|' {
-			filterBuf[i] = 0
-		}
-	}
-
-	ofn.StructSize = uint32(unsafe.Sizeof(ofn))
-	ofn.Owner = owner
-	ofn.Filter = &filterBuf[0]
-	ofn.File = &fileNameBuf[0]
-	ofn.MaxFile = uint32(len(fileNameBuf))
-	ofn.Title = StringToUTF16Ptr(title)
-	ofn.DefExt = StringToUTF16Ptr(defaultExt)
-	ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_EXPLORER
-
-	ret, _, _ := procGetSaveFileNameW.Call(uintptr(unsafe.Pointer(&ofn)))
-	if ret == 0 {
-		return "", false
-	}
-
-	return syscall.UTF16ToString(fileNameBuf), true
-}
-
-// Checkbox helper functions
-const (
-	BM_GETCHECK = 0x00F0
-	BM_SETCHECK = 0x00F1
-	BST_CHECKED = 1
-)
-
-// CheckboxIsChecked returns true if the checkbox is checked
-func CheckboxIsChecked(hwnd HWND) bool {
-	ret := sendMessage(hwnd, BM_GETCHECK, 0, 0)
-	return ret == BST_CHECKED
-}
-
-// CheckboxSetChecked sets the checkbox state
-func CheckboxSetChecked(hwnd HWND, checked bool) {
-	val := uintptr(0)
-	if checked {
-		val = BST_CHECKED
-	}
-	sendMessage(hwnd, BM_SETCHECK, val, 0)
-}
-
-// ListBox helper functions
-func ListBoxAddString(hwnd HWND, text string) int {
-	ret := sendMessage(hwnd, LB_ADDSTRING, 0, uintptr(unsafe.Pointer(StringToUTF16Ptr(text))))
-	return int(ret)
-}
-
-func ListBoxGetCurSel(hwnd HWND) int {
-	ret := sendMessage(hwnd, LB_GETCURSEL, 0, 0)
-	return int(ret)
-}
-
-func ListBoxSetCurSel(hwnd HWND, index int) int {
-	ret := sendMessage(hwnd, LB_SETCURSEL, uintptr(index), 0)
-	return int(ret)
-}
-
-func ListBoxGetCount(hwnd HWND) int {
-	ret := sendMessage(hwnd, LB_GETCOUNT, 0, 0)
-	return int(ret)
-}
-
-func ListBoxResetContent(hwnd HWND) {
-	sendMessage(hwnd, LB_RESETCONTENT, 0, 0)
-}
-
-// Popup menu constants
-const (
-	MF_STRING       = 0x00000000
-	MF_SEPARATOR    = 0x00000800
-	TPM_LEFTALIGN   = 0x0000
-	TPM_TOPALIGN    = 0x0000
-	TPM_RETURNCMD   = 0x0100
-	TPM_RIGHTBUTTON = 0x0002
-)
-
-// PopupMenu represents a popup context menu
-type PopupMenu struct {
-	handle HANDLE
-}
-
-// CreatePopupMenu creates a new popup menu
-func CreatePopupMenu() *PopupMenu {
-	ret, _, _ := procCreatePopupMenu.Call()
-	if ret == 0 {
-		return nil
-	}
-	return &PopupMenu{handle: HANDLE(ret)}
-}
-
-// AddItem adds a menu item
-func (m *PopupMenu) AddItem(id int, text string) {
-	procAppendMenuW.Call(
-		uintptr(m.handle),
-		MF_STRING,
-		uintptr(id),
-		uintptr(unsafe.Pointer(StringToUTF16Ptr(text))),
-	)
-}
-
-// AddSeparator adds a separator line
-func (m *PopupMenu) AddSeparator() {
-	procAppendMenuW.Call(
-		uintptr(m.handle),
-		MF_SEPARATOR,
-		0,
-		0,
-	)
-}
-
-// Show displays the menu at cursor position and returns selected item ID (0 if cancelled)
-func (m *PopupMenu) Show(hwnd HWND) int {
-	var pt POINT
-	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
-
-	ret, _, _ := procTrackPopupMenu.Call(
-		uintptr(m.handle),
-		TPM_LEFTALIGN|TPM_TOPALIGN|TPM_RETURNCMD|TPM_RIGHTBUTTON,
-		uintptr(pt.X),
-		uintptr(pt.Y),
-		0,
-		uintptr(hwnd),
-		0,
-	)
-	return int(ret)
-}
-
-// ShowAt displays the menu at specified position
-func (m *PopupMenu) ShowAt(hwnd HWND, x, y int32) int {
-	ret, _, _ := procTrackPopupMenu.Call(
-		uintptr(m.handle),
-		TPM_LEFTALIGN|TPM_TOPALIGN|TPM_RETURNCMD|TPM_RIGHTBUTTON,
-		uintptr(x),
-		uintptr(y),
-		0,
-		uintptr(hwnd),
-		0,
-	)
-	return int(ret)
-}
-
-// Destroy destroys the menu
-func (m *PopupMenu) Destroy() {
-	procDestroyMenu.Call(uintptr(m.handle))
 }
 
 // InitCommonControlsEx structure

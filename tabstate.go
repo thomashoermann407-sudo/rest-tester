@@ -7,7 +7,7 @@ const (
 	TabTypeRequest TabType = iota
 	TabTypeProjectView
 	TabTypeSettings
-	TabTypeNewTab
+	TabTypeWelcome
 )
 
 // TabContent is the interface implemented by all tab content types
@@ -19,11 +19,7 @@ type TabContent interface {
 // RequestTabContent holds state specific to request editing tabs
 type RequestTabContent struct {
 	BoundRequest *Request // Direct binding to the Request object
-	Method       string
-	URL          string
-	Headers      string
-	QueryParams  string
-	Body         string
+	Settings     *Settings
 	Response     string
 	Status       string
 }
@@ -41,17 +37,15 @@ func (p *ProjectViewTabContent) TabType() TabType { return TabTypeProjectView }
 
 // SettingsTabContent holds state specific to settings tabs
 type SettingsTabContent struct {
-	CertFile   string
-	KeyFile    string
-	CACertFile string
-	SkipVerify bool
+	Certificate *CertificateConfig
 }
 
 func (s *SettingsTabContent) TabType() TabType { return TabTypeSettings }
 
-// NewTabTabContent holds state specific to new tab screen
-type NewTabTabContent struct {
-	SelectedRecentIndex int // Currently selected recent project index
+// WelcomeTabContent holds state specific to new tab screen
+type WelcomeTabContent struct {
+	RecentProjects      []string // List of recent project paths
+	SelectedRecentIndex int      // Currently selected recent project index
 }
 
-func (n *NewTabTabContent) TabType() TabType { return TabTypeNewTab }
+func (n *WelcomeTabContent) TabType() TabType { return TabTypeWelcome }

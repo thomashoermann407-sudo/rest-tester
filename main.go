@@ -15,30 +15,21 @@ func main() {
 	pw.settings = InitSettings()
 	tabs := pw.tabs
 	// Handle tab events
-	tabs.OnBeforeTabChange = func(oldTabID int) {
+	tabs.OnBeforeTabChange = func() {
 		// Save state of the tab we're leaving
 		pw.SaveCurrentTabState()
 	}
-	tabs.OnTabChanged = func(tabID int) {
+	tabs.OnTabChanged = func() {
 		// Restore new tab state
 		tabData := tabs.GetActiveTab().Data
-		if content, ok := tabData.(TabContent); ok {
-			pw.RestoreTabState(content)
-		}
-
+		pw.RestoreTabState(tabData)
 	}
-	tabs.OnTabClosed = func(tabID int) {
+	tabs.OnTabClosed = func() {
 		// If no tabs left, show new tab
 		if tabs.GetTabCount() == 0 {
-			pw.CreateNewTabTab()
+			pw.CreateWelcomeTab()
 		}
 	}
-
-	// Create all UI panels (no toolbar needed - menu is in tab bar now)
-	pw.createRequestPanel()
-	pw.createProjectViewPanel()
-	pw.createSettingsPanel()
-	pw.createNewTabPanel()
 
 	// Initialize panel management
 	pw.panels = initPanels(pw)
@@ -47,16 +38,14 @@ func main() {
 	tabs.OnMenuClick = pw.showContextMenu
 
 	// Start with the Welcome Tab
-	pw.CreateNewTabTab()
+	pw.CreateWelcomeTab()
 	// Manually restore state for the first tab since OnTabChanged won't fire
 	if activeTab := tabs.GetActiveTab(); activeTab != nil {
-		if content, ok := activeTab.Data.(TabContent); ok {
-			pw.RestoreTabState(content)
-		}
+		pw.RestoreTabState(activeTab.Data)
 	}
 
 	// Handle button clicks
-	pw.mainWindow.OnCommand = pw.handleCommand
+	pw.mainWindow.OnCommand = pw.panels.handleCommand
 
 	// Handle window resizing
 	pw.mainWindow.OnResize = pw.handleResize

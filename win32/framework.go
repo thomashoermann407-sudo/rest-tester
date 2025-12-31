@@ -11,7 +11,7 @@ var (
 	comCtlInit = false
 )
 
-func WndProc(hwnd HWND, msg uintptr, wParam, lParam uintptr) uintptr {
+func wndProc(hwnd HWND, msg uintptr, wParam, lParam uintptr) uintptr {
 	if handler, ok := handlers[hwnd]; ok {
 		ret, handled := handler(uint32(msg), wParam, lParam)
 		if handled {
@@ -31,7 +31,14 @@ func WndProc(hwnd HWND, msg uintptr, wParam, lParam uintptr) uintptr {
 	}
 }
 
-var DefaultWndProc = syscall.NewCallback(WndProc)
+type TabDrawer interface {
+	Paint(hdc HDC, width int32)
+	HandleMouseMove(x, y, width int32)
+	HandleClick(x, y, width int32) bool
+	HandleMouseLeave()
+	Invalidate()
+	GetHeight() int32
+}
 
 type Window struct {
 	Hwnd        HWND
@@ -40,13 +47,11 @@ type Window struct {
 	OnMouseMove func(x, y int32) bool // Returns true if handled
 	OnMouseDown func(x, y int32) bool // Returns true if handled
 	OnMouseUp   func(x, y int32) bool // Returns true if handled
-	OnSetCursor func(x, y int32) bool // Returns true if cursor was set
-	TabManager  *TabManager
+	TabManager  TabDrawer
 	width       int32
 	height      int32
 	font        HFONT
 	monoFont    HFONT
-	controls    []HWND
 }
 
 func NewWindow(title string, width, height int32) *Window {
@@ -85,7 +90,7 @@ func NewWindow(title string, width, height int32) *Window {
 		wcx := WNDCLASSEX{
 			Size:       uint32(unsafe.Sizeof(WNDCLASSEX{})),
 			Style:      CS_HREDRAW | CS_VREDRAW,
-			WndProc:    DefaultWndProc,
+			WndProc:    syscall.NewCallback(wndProc),
 			Instance:   hInstance,
 			Background: HBRUSH(COLOR_BTNFACE + 1),
 			ClassName:  className,
@@ -113,10 +118,9 @@ func NewWindow(title string, width, height int32) *Window {
 	)
 
 	w := &Window{
-		Hwnd:     hwnd,
-		width:    width,
-		height:   height,
-		controls: make([]HWND, 0),
+		Hwnd:   hwnd,
+		width:  width,
+		height: height,
 	}
 
 	// Create modern Segoe UI font
@@ -211,16 +215,6 @@ func NewWindow(title string, width, height int32) *Window {
 			}
 			return 0, false
 
-		case WM_SETCURSOR:
-			// Let application set custom cursor
-			if w.OnSetCursor != nil {
-				x, y := getCursorPosClient(w.Hwnd)
-				if w.OnSetCursor(x, y) {
-					return 1, true // TRUE - cursor was set
-				}
-			}
-			return 0, false
-
 		case WM_MOUSELEAVE:
 			if w.TabManager != nil {
 				w.TabManager.HandleMouseLeave()
@@ -234,10 +228,84 @@ func NewWindow(title string, width, height int32) *Window {
 	return w
 }
 
-// EnableTabs creates and attaches a TabManager to the window
-func (w *Window) EnableTabs() *TabManager {
-	w.TabManager = NewTabManager(w.Hwnd)
-	return w.TabManager
+func MessageBox(hwnd HWND, text, caption string, type_ uint32) int32 {
+	ret, _, _ := procMessageBoxW.Call(
+		uintptr(hwnd),
+		uintptr(unsafe.Pointer(StringToUTF16Ptr(text))),
+		uintptr(unsafe.Pointer(StringToUTF16Ptr(caption))),
+		uintptr(type_),
+	)
+	return int32(ret)
+}
+
+// OpenFileDialog shows a file open dialog and returns the selected file path
+func OpenFileDialog(owner HWND, title, filter, defaultExt string) (string, bool) {
+	var ofn OPENFILENAME
+	fileNameBuf := make([]uint16, 260)
+
+	// Convert filter string: "Description\0*.ext\0\0"
+	filterBuf := make([]uint16, len(filter)+2)
+	copy(filterBuf, syscall.StringToUTF16(filter))
+	// Replace | with null
+	for i := range filterBuf {
+		if filterBuf[i] == '|' {
+			filterBuf[i] = 0
+		}
+	}
+
+	ofn.StructSize = uint32(unsafe.Sizeof(ofn))
+	ofn.Owner = owner
+	ofn.Filter = &filterBuf[0]
+	ofn.File = &fileNameBuf[0]
+	ofn.MaxFile = uint32(len(fileNameBuf))
+	ofn.Title = StringToUTF16Ptr(title)
+	ofn.DefExt = StringToUTF16Ptr(defaultExt)
+	ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_EXPLORER
+
+	ret, _, _ := procGetOpenFileNameW.Call(uintptr(unsafe.Pointer(&ofn)))
+	if ret == 0 {
+		return "", false
+	}
+
+	return syscall.UTF16ToString(fileNameBuf), true
+}
+
+// SaveFileDialog shows a file save dialog and returns the selected file path
+func SaveFileDialog(owner HWND, title, filter, defaultExt, defaultName string) (string, bool) {
+	var ofn OPENFILENAME
+	fileNameBuf := make([]uint16, 260)
+
+	// Copy default name to buffer
+	if defaultName != "" {
+		defaultNameUTF16 := syscall.StringToUTF16(defaultName)
+		copy(fileNameBuf, defaultNameUTF16)
+	}
+
+	// Convert filter string: "Description\0*.ext\0\0"
+	filterBuf := make([]uint16, len(filter)+2)
+	copy(filterBuf, syscall.StringToUTF16(filter))
+	// Replace | with null
+	for i := range filterBuf {
+		if filterBuf[i] == '|' {
+			filterBuf[i] = 0
+		}
+	}
+
+	ofn.StructSize = uint32(unsafe.Sizeof(ofn))
+	ofn.Owner = owner
+	ofn.Filter = &filterBuf[0]
+	ofn.File = &fileNameBuf[0]
+	ofn.MaxFile = uint32(len(fileNameBuf))
+	ofn.Title = StringToUTF16Ptr(title)
+	ofn.DefExt = StringToUTF16Ptr(defaultExt)
+	ofn.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_EXPLORER
+
+	ret, _, _ := procGetSaveFileNameW.Call(uintptr(unsafe.Pointer(&ofn)))
+	if ret == 0 {
+		return "", false
+	}
+
+	return syscall.UTF16ToString(fileNameBuf), true
 }
 
 func (w *Window) Run() {
@@ -248,6 +316,13 @@ func (w *Window) Run() {
 	}
 }
 
+func (w *Window) GetWidth() int32 {
+	return w.width
+}
+func (w *Window) GetHeight() int32 {
+	return w.height
+}
+
 // applyFont applies the modern font to a control and enables visual styles
 func (w *Window) applyFont(hwnd HWND) {
 	if w.font != 0 {
@@ -255,5 +330,4 @@ func (w *Window) applyFont(hwnd HWND) {
 	}
 	// Enable modern visual styles for the control
 	setWindowTheme(hwnd, "", "")
-	w.controls = append(w.controls, hwnd)
 }

@@ -1,10 +1,9 @@
 package win32
 
 // Tab represents a single tab in the tab bar
-type Tab struct {
-	ID    int
+type Tab[T any] struct {
 	Title string
-	Data  any // User data associated with the tab
+	Data  T
 }
 
 // HitTestResult represents what was hit in the tab bar
@@ -19,107 +18,86 @@ const (
 )
 
 // TabManager manages a Chrome-style tab bar integrated with title bar
-type TabManager struct {
-	parentHwnd    HWND
-	tabs          []*Tab
-	activeTabID   int
-	nextTabID     int
-	hoverTabIndex int
-	hoverCloseBtn bool
-	hoverAddBtn   bool
-	hoverMenuBtn  bool
-	mouseTracking bool
-
-	// Title bar integration
-	titleBarHeight int32 // Full title bar height including tabs
-	captionHeight  int32 // System caption button height
-	borderSize     int32 // Window border size
+type TabManager[T any] struct {
+	parentHwnd     HWND
+	tabs           []*Tab[T]
+	activeTabIndex int
+	hoverTabIndex  int
+	hoverCloseBtn  bool
+	hoverAddBtn    bool
+	hoverMenuBtn   bool
 
 	// Dimensions
-	tabHeight       int32
-	tabWidth        int32
-	tabMinWidth     int32
-	tabMaxWidth     int32
-	tabPadding      int32
-	tabGap          int32 // Gap between tabs
-	closeSize       int32
-	addBtnSize      int32
-	cornerRadius    int32
-	menuBtnSize     int32
-	captionBtnWidth int32 // Width of min/max/close buttons
+	titleBarHeight int32
+	tabHeight      int32
+	tabMinWidth    int32
+	tabMaxWidth    int32
+	tabPadding     int32
+	tabGap         int32 // Gap between tabs
+	closeSize      int32
+	addBtnSize     int32
+	cornerRadius   int32
+	menuBtnSize    int32
 
 	// Colors (Windows 11 style - Mica-like)
-	bgColor           COLORREF
-	bgColorInactive   COLORREF
-	tabBgColor        COLORREF
-	tabActiveColor    COLORREF
-	tabHoverColor     COLORREF
-	textColor         COLORREF
-	textActiveColor   COLORREF
-	textInactiveColor COLORREF
-	closeBtnColor     COLORREF
-	closeBtnHover     COLORREF
-	closeBtnHoverBg   COLORREF
-	addBtnColor       COLORREF
-	addBtnHover       COLORREF
-	borderColor       COLORREF
-	shadowColor       COLORREF
+	bgColor         COLORREF
+	tabBgColor      COLORREF
+	tabActiveColor  COLORREF
+	tabHoverColor   COLORREF
+	textColor       COLORREF
+	textActiveColor COLORREF
+	closeBtnColor   COLORREF
+	closeBtnHover   COLORREF
+	closeBtnHoverBg COLORREF
+	addBtnColor     COLORREF
+	addBtnHover     COLORREF
+	borderColor     COLORREF
 
 	// Fonts
 	font HFONT
 
 	// Callbacks
-	OnTabChanged      func(tabID int)
-	OnTabClosed       func(tabID int)
-	OnBeforeTabChange func(oldTabID int) // Called before switching tabs
+	OnTabChanged      func()
+	OnTabClosed       func()
+	OnBeforeTabChange func()
 	OnMenuClick       func()
 }
 
 // NewTabManager creates a new tab manager
-func NewTabManager(parent HWND) *TabManager {
-	tm := &TabManager{
-		parentHwnd:    parent,
-		tabs:          make([]*Tab, 0),
-		activeTabID:   -1,
-		nextTabID:     1,
-		hoverTabIndex: -1,
-		hoverCloseBtn: false,
-		hoverAddBtn:   false,
-		hoverMenuBtn:  false,
-		mouseTracking: false,
+func NewTabManager[T any](parent HWND) *TabManager[T] {
+	tm := &TabManager[T]{
+		parentHwnd:     parent,
+		tabs:           make([]*Tab[T], 0),
+		activeTabIndex: -1,
+		hoverTabIndex:  -1,
+		hoverCloseBtn:  false,
+		hoverAddBtn:    false,
+		hoverMenuBtn:   false,
 
-		// Title bar sizing - match Windows 11 Chrome
-		titleBarHeight: 46, // Slightly taller for better tab spacing
-		captionHeight:  32,
-		borderSize:     8,
-
-		tabHeight:       34,
-		tabMinWidth:     80,
-		tabMaxWidth:     200,
-		tabPadding:      12,
-		tabGap:          2,
-		closeSize:       16,
-		addBtnSize:      28,
-		cornerRadius:    8,
-		menuBtnSize:     38,
-		captionBtnWidth: 46, // Standard Windows caption button width
+		titleBarHeight: 46,
+		tabHeight:      34,
+		tabMinWidth:    80,
+		tabMaxWidth:    200,
+		tabPadding:     12,
+		tabGap:         2,
+		closeSize:      16,
+		addBtnSize:     28,
+		cornerRadius:   8,
+		menuBtnSize:    38,
 
 		// Windows 11 Mica-inspired colors (light theme)
-		bgColor:           rgb(243, 243, 243),
-		bgColorInactive:   rgb(249, 249, 249),
-		tabBgColor:        rgb(243, 243, 243),
-		tabActiveColor:    rgb(255, 255, 255),
-		tabHoverColor:     rgb(235, 235, 235),
-		textColor:         rgb(96, 96, 96),
-		textActiveColor:   rgb(32, 32, 32),
-		textInactiveColor: rgb(140, 140, 140),
-		closeBtnColor:     rgb(128, 128, 128),
-		closeBtnHover:     rgb(255, 255, 255),
-		closeBtnHoverBg:   rgb(196, 43, 28),
-		addBtnColor:       rgb(96, 96, 96),
-		addBtnHover:       rgb(32, 32, 32),
-		borderColor:       rgb(229, 229, 229),
-		shadowColor:       rgb(0, 0, 0),
+		bgColor:         rgb(243, 243, 243),
+		tabBgColor:      rgb(243, 243, 243),
+		tabActiveColor:  rgb(255, 255, 255),
+		tabHoverColor:   rgb(235, 235, 235),
+		textColor:       rgb(96, 96, 96),
+		textActiveColor: rgb(32, 32, 32),
+		closeBtnColor:   rgb(128, 128, 128),
+		closeBtnHover:   rgb(255, 255, 255),
+		closeBtnHoverBg: rgb(196, 43, 28),
+		addBtnColor:     rgb(96, 96, 96),
+		addBtnHover:     rgb(32, 32, 32),
+		borderColor:     rgb(229, 229, 229),
 	}
 
 	// Create fonts
@@ -134,108 +112,97 @@ func NewTabManager(parent HWND) *TabManager {
 	return tm
 }
 
-func (tm *TabManager) AddTab(title string, data any) int {
-	tab := &Tab{
-		ID:    tm.nextTabID,
+func (tm *TabManager[T]) AddTab(title string, data T) {
+	tab := &Tab[T]{
 		Title: title,
 		Data:  data,
 	}
-	tm.nextTabID++
 	tm.tabs = append(tm.tabs, tab)
 
-	// Don't set activeTabID here - let SetActiveTab handle it so callbacks fire properly
-
 	tm.Invalidate()
-	return tab.ID
+	tm.SetActiveTab(len(tm.tabs) - 1)
 }
 
-// RemoveTab removes a tab by ID
-func (tm *TabManager) RemoveTab(tabID int) {
-	for i, tab := range tm.tabs {
-		if tab.ID == tabID {
-			tm.tabs = append(tm.tabs[:i], tm.tabs[i+1:]...)
-
-			// If we removed the active tab, activate another
-			if tm.activeTabID == tabID {
-				if len(tm.tabs) > 0 {
-					// Prefer the tab at the same position, or the last one
-					newIndex := i
-					if newIndex >= len(tm.tabs) {
-						newIndex = len(tm.tabs) - 1
-					}
-					tm.activeTabID = tm.tabs[newIndex].ID
-					// Trigger tab changed callback for new active tab
-					if tm.OnTabChanged != nil {
-						tm.OnTabChanged(tm.activeTabID)
-					}
-				} else {
-					tm.activeTabID = -1
-				}
+// RemoveTab removes a tab by index
+func (tm *TabManager[T]) RemoveTab(tabIndex int) {
+	tm.tabs = append(tm.tabs[:tabIndex], tm.tabs[tabIndex+1:]...)
+	// If we removed the active tab, activate another
+	if tm.activeTabIndex == tabIndex {
+		if len(tm.tabs) > 0 {
+			// Prefer the tab at the same position, or the last one
+			newIndex := tabIndex
+			if newIndex >= len(tm.tabs) {
+				newIndex = len(tm.tabs) - 1
 			}
-
-			if tm.OnTabClosed != nil {
-				tm.OnTabClosed(tabID)
+			tm.activeTabIndex = newIndex
+			// Trigger tab changed callback for new active tab
+			if tm.OnTabChanged != nil {
+				tm.OnTabChanged()
 			}
-
-			tm.Invalidate()
-			break
+		} else {
+			tm.activeTabIndex = -1
 		}
 	}
+
+	if tm.OnTabClosed != nil {
+		tm.OnTabClosed()
+	}
+
+	tm.Invalidate()
+
 }
 
-// SetActiveTab sets the active tab by ID
-func (tm *TabManager) SetActiveTab(tabID int) {
-	for _, tab := range tm.tabs {
-		if tab.ID == tabID {
-			if tm.activeTabID != tabID {
-				// Call before change callback to allow saving state
-				if tm.OnBeforeTabChange != nil && tm.activeTabID != -1 {
-					tm.OnBeforeTabChange(tm.activeTabID)
-				}
-
-				tm.activeTabID = tabID
-				if tm.OnTabChanged != nil {
-					tm.OnTabChanged(tabID)
-				}
-				tm.Invalidate()
+// SetActiveTab sets the active tab by index
+func (tm *TabManager[T]) SetActiveTab(tabIndex int) {
+	if tabIndex >= 0 && tabIndex < len(tm.tabs) {
+		if tm.activeTabIndex != tabIndex {
+			// Call before change callback to allow saving state
+			if tm.OnBeforeTabChange != nil && tm.activeTabIndex != -1 {
+				tm.OnBeforeTabChange()
 			}
-			break
+
+			tm.activeTabIndex = tabIndex
+			if tm.OnTabChanged != nil {
+				tm.OnTabChanged()
+			}
+			tm.Invalidate()
 		}
 	}
 }
 
 // GetActiveTab returns the currently active tab
-func (tm *TabManager) GetActiveTab() *Tab {
-	return tm.GetTab(tm.activeTabID)
+func (tm *TabManager[T]) GetActiveTab() *Tab[T] {
+	if tm.activeTabIndex < 0 || tm.activeTabIndex >= len(tm.tabs) {
+		return nil
+	}
+	return tm.tabs[tm.activeTabIndex]
 }
 
-// GetTab returns a tab by ID
-func (tm *TabManager) GetTab(tabID int) *Tab {
-	for _, tab := range tm.tabs {
-		if tab.ID == tabID {
-			return tab
-		}
+// GetTab returns a tab by Index
+func (tm *TabManager[T]) GetTab(tabIndex int) *Tab[T] {
+	if tabIndex >= 0 && tabIndex < len(tm.tabs) {
+		return tm.tabs[tabIndex]
 	}
 	return nil
 }
 
 // GetTabCount returns the number of tabs
-func (tm *TabManager) GetTabCount() int {
+func (tm *TabManager[T]) GetTabCount() int {
 	return len(tm.tabs)
 }
 
 // GetHeight returns the total title bar height
-func (tm *TabManager) GetHeight() int32 {
+func (tm *TabManager[T]) GetHeight() int32 {
 	return tm.titleBarHeight
 }
 
 // GetContentOffset returns the Y offset where content should start
-func (tm *TabManager) GetContentOffset() int32 {
+func (tm *TabManager[T]) GetContentOffset() int32 {
 	return tm.titleBarHeight
 }
 
 // Invalidate triggers a repaint of the tab bar area
-func (tm *TabManager) Invalidate() {
+func (tm *TabManager[T]) Invalidate() {
 	if tm.parentHwnd != 0 {
 		// Get the actual client rect width for proper invalidation
 		var clientRect RECT
@@ -254,7 +221,7 @@ func (tm *TabManager) Invalidate() {
 }
 
 // getTabRect calculates the rectangle for a tab at the given index
-func (tm *TabManager) getTabRect(index int, totalWidth int32) RECT {
+func (tm *TabManager[T]) getTabRect(index int, totalWidth int32) RECT {
 	numTabs := int32(len(tm.tabs))
 	if numTabs == 0 {
 		return RECT{}
@@ -282,7 +249,7 @@ func (tm *TabManager) getTabRect(index int, totalWidth int32) RECT {
 }
 
 // getCloseRect calculates the close button rectangle for a tab
-func (tm *TabManager) getCloseRect(tabRect RECT) RECT {
+func (tm *TabManager[T]) getCloseRect(tabRect RECT) RECT {
 	padding := int32(8)
 	centerY := (tabRect.Top + tabRect.Bottom) / 2
 	return RECT{
@@ -294,7 +261,7 @@ func (tm *TabManager) getCloseRect(tabRect RECT) RECT {
 }
 
 // getAddButtonRect returns the rectangle for the add button
-func (tm *TabManager) getAddButtonRect(totalWidth int32) RECT {
+func (tm *TabManager[T]) getAddButtonRect(totalWidth int32) RECT {
 	numTabs := int32(len(tm.tabs))
 	rightReserved := tm.menuBtnSize + tm.tabPadding*2
 	availableWidth := totalWidth - rightReserved - tm.addBtnSize - tm.tabPadding*2
@@ -314,23 +281,18 @@ func (tm *TabManager) getAddButtonRect(totalWidth int32) RECT {
 }
 
 // getMenuButtonRect returns the rectangle for the menu button (right side)
-func (tm *TabManager) getMenuButtonRect(totalWidth int32) RECT {
+func (tm *TabManager[T]) getMenuButtonRect(totalWidth int32) RECT {
 	centerY := tm.titleBarHeight / 2
-	left := totalWidth - tm.menuBtnSize - tm.tabPadding
 	return RECT{
-		Left:   left,
+		Left:   totalWidth - tm.menuBtnSize - tm.tabPadding,
 		Top:    centerY - tm.menuBtnSize/2 + 2,
-		Right:  left + tm.menuBtnSize,
+		Right:  totalWidth - tm.tabPadding,
 		Bottom: centerY + tm.menuBtnSize/2 + 2,
 	}
 }
 
-func (tm *TabManager) SetWidth(width int32) {
-	tm.tabWidth = width
-}
-
 // HitTest determines what was clicked/hovered
-func (tm *TabManager) HitTest(x, y int32, totalWidth int32) (result HitTestResult, tabIndex int) {
+func (tm *TabManager[T]) HitTest(x, y int32, totalWidth int32) (result HitTestResult, tabIndex int) {
 	tabIndex = -1
 
 	// Check menu button
@@ -364,7 +326,7 @@ func (tm *TabManager) HitTest(x, y int32, totalWidth int32) (result HitTestResul
 }
 
 // HandleMouseMove handles WM_MOUSEMOVE
-func (tm *TabManager) HandleMouseMove(x, y int32, totalWidth int32) bool {
+func (tm *TabManager[T]) HandleMouseMove(x, y int32, totalWidth int32) {
 	if y > tm.titleBarHeight {
 		if tm.hoverTabIndex != -1 || tm.hoverAddBtn || tm.hoverMenuBtn {
 			tm.hoverTabIndex = -1
@@ -373,7 +335,7 @@ func (tm *TabManager) HandleMouseMove(x, y int32, totalWidth int32) bool {
 			tm.hoverMenuBtn = false
 			tm.Invalidate()
 		}
-		return false
+		return
 	}
 
 	oldHoverIndex := tm.hoverTabIndex
@@ -404,13 +366,10 @@ func (tm *TabManager) HandleMouseMove(x, y int32, totalWidth int32) bool {
 		oldHoverAdd != tm.hoverAddBtn || oldHoverMenu != tm.hoverMenuBtn {
 		tm.Invalidate()
 	}
-
-	return true
 }
 
 // HandleMouseLeave handles WM_MOUSELEAVE
-func (tm *TabManager) HandleMouseLeave() {
-	tm.mouseTracking = false
+func (tm *TabManager[T]) HandleMouseLeave() {
 	if tm.hoverTabIndex != -1 || tm.hoverAddBtn || tm.hoverMenuBtn {
 		tm.hoverTabIndex = -1
 		tm.hoverCloseBtn = false
@@ -421,7 +380,7 @@ func (tm *TabManager) HandleMouseLeave() {
 }
 
 // HandleClick handles mouse click
-func (tm *TabManager) HandleClick(x, y int32, totalWidth int32) bool {
+func (tm *TabManager[T]) HandleClick(x, y int32, totalWidth int32) bool {
 	if y > tm.titleBarHeight {
 		return false
 	}
@@ -430,7 +389,7 @@ func (tm *TabManager) HandleClick(x, y int32, totalWidth int32) bool {
 
 	switch result {
 	case HitAddButton:
-		tm.AddTab("New Tab", true)
+		//TODO tm.AddTab("New Tab", nil)
 		return true
 
 	case HitMenuButton:
@@ -441,13 +400,13 @@ func (tm *TabManager) HandleClick(x, y int32, totalWidth int32) bool {
 
 	case HitCloseButton:
 		if tabIndex >= 0 && tabIndex < len(tm.tabs) {
-			tm.RemoveTab(tm.tabs[tabIndex].ID)
+			tm.RemoveTab(tabIndex)
 		}
 		return true
 
 	case HitTab:
 		if tabIndex >= 0 && tabIndex < len(tm.tabs) {
-			tm.SetActiveTab(tm.tabs[tabIndex].ID)
+			tm.SetActiveTab(tabIndex)
 		}
 		return true
 	}
@@ -456,7 +415,7 @@ func (tm *TabManager) HandleClick(x, y int32, totalWidth int32) bool {
 }
 
 // Paint draws the entire title bar with tabs
-func (tm *TabManager) Paint(hdc HDC, width int32) {
+func (tm *TabManager[T]) Paint(hdc HDC, width int32) {
 	// Draw background
 	bgColor := tm.bgColor
 	bgBrush := createSolidBrush(bgColor)
@@ -486,9 +445,9 @@ func (tm *TabManager) Paint(hdc HDC, width int32) {
 }
 
 // drawTab draws a single tab with modern styling
-func (tm *TabManager) drawTab(hdc HDC, index int, tab *Tab, totalWidth int32) {
+func (tm *TabManager[T]) drawTab(hdc HDC, index int, tab *Tab[T	], totalWidth int32) {
 	rect := tm.getTabRect(index, totalWidth)
-	isActive := tab.ID == tm.activeTabID
+	isActive := index == tm.activeTabIndex
 	isHover := index == tm.hoverTabIndex && !tm.hoverCloseBtn
 
 	// Determine colors
@@ -502,8 +461,8 @@ func (tm *TabManager) drawTab(hdc HDC, index int, tab *Tab, totalWidth int32) {
 		bgColor = tm.tabHoverColor
 		textColor = tm.textActiveColor
 	} else {
-		textColor = tm.textColor
 		bgColor = tm.tabBgColor
+		textColor = tm.textColor
 	}
 
 	// Draw tab background for active or hover tabs
@@ -558,7 +517,7 @@ func (tm *TabManager) drawTab(hdc HDC, index int, tab *Tab, totalWidth int32) {
 }
 
 // drawCloseButton draws the X button for closing a tab
-func (tm *TabManager) drawCloseButton(hdc HDC, tabRect RECT, isHover bool) {
+func (tm *TabManager[T]) drawCloseButton(hdc HDC, tabRect RECT, isHover bool) {
 	closeRect := tm.getCloseRect(tabRect)
 
 	// Draw hover background (rounded)
@@ -600,7 +559,7 @@ func (tm *TabManager) drawCloseButton(hdc HDC, tabRect RECT, isHover bool) {
 }
 
 // drawAddButton draws the + button for adding tabs
-func (tm *TabManager) drawAddButton(hdc HDC, totalWidth int32) {
+func (tm *TabManager[T]) drawAddButton(hdc HDC, totalWidth int32) {
 	rect := tm.getAddButtonRect(totalWidth)
 
 	// Draw hover background
@@ -646,7 +605,7 @@ func (tm *TabManager) drawAddButton(hdc HDC, totalWidth int32) {
 }
 
 // drawMenuButton draws the hamburger menu button
-func (tm *TabManager) drawMenuButton(hdc HDC, totalWidth int32) {
+func (tm *TabManager[T]) drawMenuButton(hdc HDC, totalWidth int32) {
 	rect := tm.getMenuButtonRect(totalWidth)
 
 	// Draw hover background
@@ -692,14 +651,14 @@ func (tm *TabManager) drawMenuButton(hdc HDC, totalWidth int32) {
 }
 
 // drawBottomLine draws a subtle separator line at the bottom of the tab bar
-func (tm *TabManager) drawBottomLine(hdc HDC, totalWidth int32) {
+func (tm *TabManager[T]) drawBottomLine(hdc HDC, totalWidth int32) {
 	pen := createPen(PS_SOLID, 1, tm.borderColor)
 	oldPen := selectObject(hdc, HANDLE(pen))
 
 	// Find active tab rect to skip drawing line under it
 	var activeRect *RECT
-	for i, tab := range tm.tabs {
-		if tab.ID == tm.activeTabID {
+	for i := range tm.tabs {
+		if i == tm.activeTabIndex {
 			r := tm.getTabRect(i, totalWidth)
 			activeRect = &r
 			break
