@@ -2,28 +2,29 @@ package win32
 
 // Tab represents a single tab in the tab bar
 type Tab[T any] struct {
-	Title string
-	Data  T
+	Title          string
+	Data           T
+	PanelGroupName PanelGroupName
 }
 
-// HitTestResult represents what was hit in the tab bar
-type HitTestResult int
+// hitTestResult represents what was hit in the tab bar
+type hitTestResult int
 
 const (
-	HitNone HitTestResult = iota
-	HitTab
-	HitCloseButton
-	HitAddButton
-	HitMenuButton
+	hitNone hitTestResult = iota
+	hitTab
+	hitCloseButton
+	hitAddButton
+	hitMenuButton
 )
 
 // TabManager manages a Chrome-style tab bar integrated with title bar
 type TabManager[T any] struct {
-	parentHwnd     HWND
+	parentHwnd     hWnd
 	tabs           []*Tab[T]
+	panels         *Panels
 	activeTabIndex int
 	hoverTabIndex  int
-	hoverCloseBtn  bool
 	hoverAddBtn    bool
 	hoverMenuBtn   bool
 
@@ -40,41 +41,42 @@ type TabManager[T any] struct {
 	menuBtnSize    int32
 
 	// Colors (Windows 11 style - Mica-like)
-	bgColor         COLORREF
-	tabBgColor      COLORREF
-	tabActiveColor  COLORREF
-	tabHoverColor   COLORREF
-	textColor       COLORREF
-	textActiveColor COLORREF
-	closeBtnColor   COLORREF
-	closeBtnHover   COLORREF
-	closeBtnHoverBg COLORREF
-	addBtnColor     COLORREF
-	addBtnHover     COLORREF
-	borderColor     COLORREF
+	tabBgColor      colorRef
+	tabActiveColor  colorRef
+	tabHoverColor   colorRef
+	textColor       colorRef
+	textActiveColor colorRef
+	closeBtnColor   colorRef
+	closeBtnHover   colorRef
+	closeBtnHoverBg colorRef
 
 	// Fonts
-	font HFONT
+	font hFont
+
+	// Pens
+	bgBrush      hBrush
+	tabBorderPen hPen
+	btnPen       hPen
 
 	// Callbacks
-	OnTabChanged      func()
-	OnTabClosed       func()
-	OnBeforeTabChange func()
-	OnMenuClick       func()
+	OnTabClosed func()
+	OnNewTab    func()
+	OnMenuClick func()
 }
 
 // NewTabManager creates a new tab manager
-func NewTabManager[T any](parent HWND) *TabManager[T] {
-	tm := &TabManager[T]{
-		parentHwnd:     parent,
+func NewTabManager[T any](window *Window) *TabManager[T] {
+	titleBarHeight := int32(46)
+	return &TabManager[T]{
+		parentHwnd:     window.hwnd,
 		tabs:           make([]*Tab[T], 0),
+		panels:         NewPanels(titleBarHeight, window.width, window.height),
 		activeTabIndex: -1,
 		hoverTabIndex:  -1,
-		hoverCloseBtn:  false,
 		hoverAddBtn:    false,
 		hoverMenuBtn:   false,
 
-		titleBarHeight: 46,
+		titleBarHeight: titleBarHeight,
 		tabHeight:      34,
 		tabMinWidth:    80,
 		tabMaxWidth:    200,
@@ -86,7 +88,6 @@ func NewTabManager[T any](parent HWND) *TabManager[T] {
 		menuBtnSize:    38,
 
 		// Windows 11 Mica-inspired colors (light theme)
-		bgColor:         rgb(243, 243, 243),
 		tabBgColor:      rgb(243, 243, 243),
 		tabActiveColor:  rgb(255, 255, 255),
 		tabHoverColor:   rgb(235, 235, 235),
@@ -95,27 +96,20 @@ func NewTabManager[T any](parent HWND) *TabManager[T] {
 		closeBtnColor:   rgb(128, 128, 128),
 		closeBtnHover:   rgb(255, 255, 255),
 		closeBtnHoverBg: rgb(196, 43, 28),
-		addBtnColor:     rgb(96, 96, 96),
-		addBtnHover:     rgb(32, 32, 32),
-		borderColor:     rgb(229, 229, 229),
+
+		bgBrush:      createSolidBrush(rgb(243, 243, 243)),
+		tabBorderPen: createPen(PS_SOLID, 1, rgb(229, 229, 229)),
+		btnPen:       createPen(PS_SOLID, 1, rgb(32, 32, 32)),
+
+		font: createFont(-12, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH|FF_DONTCARE, "Segoe UI"),
 	}
-
-	// Create fonts
-	tm.font = createFont(
-		-12, 0, 0, 0, FW_NORMAL,
-		0, 0, 0, DEFAULT_CHARSET,
-		OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-		CLEARTYPE_QUALITY, DEFAULT_PITCH|FF_DONTCARE,
-		"Segoe UI",
-	)
-
-	return tm
 }
 
-func (tm *TabManager[T]) AddTab(title string, data T) {
+func (tm *TabManager[T]) AddTab(title string, data T, panelGroupName PanelGroupName) {
 	tab := &Tab[T]{
-		Title: title,
-		Data:  data,
+		Title:          title,
+		Data:           data,
+		PanelGroupName: panelGroupName,
 	}
 	tm.tabs = append(tm.tabs, tab)
 
@@ -135,10 +129,7 @@ func (tm *TabManager[T]) RemoveTab(tabIndex int) {
 				newIndex = len(tm.tabs) - 1
 			}
 			tm.activeTabIndex = newIndex
-			// Trigger tab changed callback for new active tab
-			if tm.OnTabChanged != nil {
-				tm.OnTabChanged()
-			}
+			tm.onTabChanged()
 		} else {
 			tm.activeTabIndex = -1
 		}
@@ -153,37 +144,39 @@ func (tm *TabManager[T]) RemoveTab(tabIndex int) {
 }
 
 // SetActiveTab sets the active tab by index
-func (tm *TabManager[T]) SetActiveTab(tabIndex int) {
+func (tm *TabManager[T]) SetActiveTab(tabIndex int) *Tab[T] {
 	if tabIndex >= 0 && tabIndex < len(tm.tabs) {
 		if tm.activeTabIndex != tabIndex {
 			// Call before change callback to allow saving state
-			if tm.OnBeforeTabChange != nil && tm.activeTabIndex != -1 {
-				tm.OnBeforeTabChange()
+			if activeTab := tm.getActiveTab(); activeTab != nil {
+				tm.panels.get(activeTab.PanelGroupName).SaveState()
 			}
 
 			tm.activeTabIndex = tabIndex
-			if tm.OnTabChanged != nil {
-				tm.OnTabChanged()
-			}
+			tm.onTabChanged()
 			tm.Invalidate()
 		}
 	}
+	return tm.getActiveTab()
 }
 
-// GetActiveTab returns the currently active tab
-func (tm *TabManager[T]) GetActiveTab() *Tab[T] {
+func (tm *TabManager[T]) onTabChanged() {
+	tab := tm.getActiveTab()
+	tm.panels.Show(tab.PanelGroupName)
+	tm.panels.get(tab.PanelGroupName).SetState(tab.Data)
+}
+
+// Todo: remove
+func (tm *TabManager[T]) GetPanels() *Panels {
+	return tm.panels
+}
+
+// getActiveTab returns the currently active tab
+func (tm *TabManager[T]) getActiveTab() *Tab[T] {
 	if tm.activeTabIndex < 0 || tm.activeTabIndex >= len(tm.tabs) {
 		return nil
 	}
 	return tm.tabs[tm.activeTabIndex]
-}
-
-// GetTab returns a tab by Index
-func (tm *TabManager[T]) GetTab(tabIndex int) *Tab[T] {
-	if tabIndex >= 0 && tabIndex < len(tm.tabs) {
-		return tm.tabs[tabIndex]
-	}
-	return nil
 }
 
 // GetTabCount returns the number of tabs
@@ -191,13 +184,19 @@ func (tm *TabManager[T]) GetTabCount() int {
 	return len(tm.tabs)
 }
 
-// GetHeight returns the total title bar height
-func (tm *TabManager[T]) GetHeight() int32 {
-	return tm.titleBarHeight
+// FindTabByPanelGroup finds the index of the first tab with the given panel group
+// Returns -1 if no tab is found
+func (tm *TabManager[T]) FindTabByPanelGroup(panelGroupName PanelGroupName) (int, bool) {
+	for i, tab := range tm.tabs {
+		if tab.PanelGroupName == panelGroupName {
+			return i, true
+		}
+	}
+	return -1, false
 }
 
-// GetContentOffset returns the Y offset where content should start
-func (tm *TabManager[T]) GetContentOffset() int32 {
+// GetHeight returns the total title bar height
+func (tm *TabManager[T]) GetHeight() int32 {
 	return tm.titleBarHeight
 }
 
@@ -205,26 +204,26 @@ func (tm *TabManager[T]) GetContentOffset() int32 {
 func (tm *TabManager[T]) Invalidate() {
 	if tm.parentHwnd != 0 {
 		// Get the actual client rect width for proper invalidation
-		var clientRect RECT
+		var clientRect rect
 		getClientRect(tm.parentHwnd, &clientRect)
 
-		rect := RECT{
+		rect := &rect{
 			Left:   0,
 			Top:    0,
 			Right:  clientRect.Right, // Use actual window width
 			Bottom: tm.titleBarHeight,
 		}
-		invalidateRect(tm.parentHwnd, &rect, true)
+		invalidateRect(tm.parentHwnd, rect, true)
 		// Force immediate repaint to ensure tabs are redrawn when added/removed
 		updateWindow(tm.parentHwnd)
 	}
 }
 
 // getTabRect calculates the rectangle for a tab at the given index
-func (tm *TabManager[T]) getTabRect(index int, totalWidth int32) RECT {
+func (tm *TabManager[T]) getTabRect(index int, totalWidth int32) *rect {
 	numTabs := int32(len(tm.tabs))
 	if numTabs == 0 {
-		return RECT{}
+		return &rect{}
 	}
 
 	// Reserve space for: menu button on the right side
@@ -240,7 +239,7 @@ func (tm *TabManager[T]) getTabRect(index int, totalWidth int32) RECT {
 	topMargin := (tm.titleBarHeight-tm.tabHeight)/2 + 2
 
 	left := tm.tabPadding + int32(index)*(tabWidth+tm.tabGap)
-	return RECT{
+	return &rect{
 		Left:   left,
 		Top:    topMargin,
 		Right:  left + tabWidth,
@@ -249,10 +248,10 @@ func (tm *TabManager[T]) getTabRect(index int, totalWidth int32) RECT {
 }
 
 // getCloseRect calculates the close button rectangle for a tab
-func (tm *TabManager[T]) getCloseRect(tabRect RECT) RECT {
+func (tm *TabManager[T]) getCloseRect(tabRect *rect) *rect {
 	padding := int32(8)
 	centerY := (tabRect.Top + tabRect.Bottom) / 2
-	return RECT{
+	return &rect{
 		Left:   tabRect.Right - tm.closeSize - padding,
 		Top:    centerY - tm.closeSize/2,
 		Right:  tabRect.Right - padding,
@@ -261,7 +260,7 @@ func (tm *TabManager[T]) getCloseRect(tabRect RECT) RECT {
 }
 
 // getAddButtonRect returns the rectangle for the add button
-func (tm *TabManager[T]) getAddButtonRect(totalWidth int32) RECT {
+func (tm *TabManager[T]) getAddButtonRect(totalWidth int32) *rect {
 	numTabs := int32(len(tm.tabs))
 	rightReserved := tm.menuBtnSize + tm.tabPadding*2
 	availableWidth := totalWidth - rightReserved - tm.addBtnSize - tm.tabPadding*2
@@ -272,7 +271,7 @@ func (tm *TabManager[T]) getAddButtonRect(totalWidth int32) RECT {
 	centerY := topMargin + tm.tabHeight/2
 
 	left := tm.tabPadding + numTabs*(tabWidth+tm.tabGap) + 4
-	return RECT{
+	return &rect{
 		Left:   left,
 		Top:    centerY - tm.addBtnSize/2,
 		Right:  left + tm.addBtnSize,
@@ -281,9 +280,9 @@ func (tm *TabManager[T]) getAddButtonRect(totalWidth int32) RECT {
 }
 
 // getMenuButtonRect returns the rectangle for the menu button (right side)
-func (tm *TabManager[T]) getMenuButtonRect(totalWidth int32) RECT {
+func (tm *TabManager[T]) getMenuButtonRect(totalWidth int32) *rect {
 	centerY := tm.titleBarHeight / 2
-	return RECT{
+	return &rect{
 		Left:   totalWidth - tm.menuBtnSize - tm.tabPadding,
 		Top:    centerY - tm.menuBtnSize/2 + 2,
 		Right:  totalWidth - tm.tabPadding,
@@ -291,38 +290,38 @@ func (tm *TabManager[T]) getMenuButtonRect(totalWidth int32) RECT {
 	}
 }
 
-// HitTest determines what was clicked/hovered
-func (tm *TabManager[T]) HitTest(x, y int32, totalWidth int32) (result HitTestResult, tabIndex int) {
+// hitTest determines what was clicked/hovered
+func (tm *TabManager[T]) hitTest(x, y int32, totalWidth int32) (result hitTestResult, tabIndex int) {
 	tabIndex = -1
 
 	// Check menu button
 	menuRect := tm.getMenuButtonRect(totalWidth)
-	if x >= menuRect.Left && x <= menuRect.Right && y >= menuRect.Top && y <= menuRect.Bottom {
-		return HitMenuButton, -1
+	if menuRect.inside(x, y) {
+		return hitMenuButton, -1
 	}
 
 	// Check add button
 	addRect := tm.getAddButtonRect(totalWidth)
-	if x >= addRect.Left && x <= addRect.Right && y >= addRect.Top && y <= addRect.Bottom {
-		return HitAddButton, -1
+	if addRect.inside(x, y) {
+		return hitAddButton, -1
 	}
 
 	// Check each tab
 	for i := range tm.tabs {
 		tabRect := tm.getTabRect(i, totalWidth)
-		if x >= tabRect.Left && x <= tabRect.Right && y >= tabRect.Top && y <= tabRect.Bottom {
+		if tabRect.inside(x, y) {
 			tabIndex = i
 
 			// Check close button within tab
 			closeRect := tm.getCloseRect(tabRect)
-			if x >= closeRect.Left && x <= closeRect.Right && y >= closeRect.Top && y <= closeRect.Bottom {
-				return HitCloseButton, tabIndex
+			if closeRect.inside(x, y) {
+				return hitCloseButton, tabIndex
 			}
-			return HitTab, tabIndex
+			return hitTab, tabIndex
 		}
 	}
 
-	return HitNone, -1
+	return hitNone, -1
 }
 
 // HandleMouseMove handles WM_MOUSEMOVE
@@ -330,7 +329,6 @@ func (tm *TabManager[T]) HandleMouseMove(x, y int32, totalWidth int32) {
 	if y > tm.titleBarHeight {
 		if tm.hoverTabIndex != -1 || tm.hoverAddBtn || tm.hoverMenuBtn {
 			tm.hoverTabIndex = -1
-			tm.hoverCloseBtn = false
 			tm.hoverAddBtn = false
 			tm.hoverMenuBtn = false
 			tm.Invalidate()
@@ -339,93 +337,62 @@ func (tm *TabManager[T]) HandleMouseMove(x, y int32, totalWidth int32) {
 	}
 
 	oldHoverIndex := tm.hoverTabIndex
-	oldHoverClose := tm.hoverCloseBtn
 	oldHoverAdd := tm.hoverAddBtn
 	oldHoverMenu := tm.hoverMenuBtn
 
-	result, tabIndex := tm.HitTest(x, y, totalWidth)
+	result, tabIndex := tm.hitTest(x, y, totalWidth)
 
 	tm.hoverTabIndex = -1
-	tm.hoverCloseBtn = false
 	tm.hoverAddBtn = false
 	tm.hoverMenuBtn = false
 
 	switch result {
-	case HitTab:
+	case hitTab:
 		tm.hoverTabIndex = tabIndex
-	case HitCloseButton:
+	case hitCloseButton:
 		tm.hoverTabIndex = tabIndex
-		tm.hoverCloseBtn = true
-	case HitAddButton:
+	case hitAddButton:
 		tm.hoverAddBtn = true
-	case HitMenuButton:
+	case hitMenuButton:
 		tm.hoverMenuBtn = true
 	}
 
-	if oldHoverIndex != tm.hoverTabIndex || oldHoverClose != tm.hoverCloseBtn ||
+	if oldHoverIndex != tm.hoverTabIndex ||
 		oldHoverAdd != tm.hoverAddBtn || oldHoverMenu != tm.hoverMenuBtn {
 		tm.Invalidate()
 	}
 }
 
-// HandleMouseLeave handles WM_MOUSELEAVE
-func (tm *TabManager[T]) HandleMouseLeave() {
-	if tm.hoverTabIndex != -1 || tm.hoverAddBtn || tm.hoverMenuBtn {
-		tm.hoverTabIndex = -1
-		tm.hoverCloseBtn = false
-		tm.hoverAddBtn = false
-		tm.hoverMenuBtn = false
-		tm.Invalidate()
-	}
-}
-
 // HandleClick handles mouse click
-func (tm *TabManager[T]) HandleClick(x, y int32, totalWidth int32) bool {
-	if y > tm.titleBarHeight {
-		return false
-	}
-
-	result, tabIndex := tm.HitTest(x, y, totalWidth)
+func (tm *TabManager[T]) HandleClick(x, y int32, totalWidth int32) {
+	result, tabIndex := tm.hitTest(x, y, totalWidth)
 
 	switch result {
-	case HitAddButton:
-		//TODO tm.AddTab("New Tab", nil)
-		return true
-
-	case HitMenuButton:
+	case hitAddButton:
+		if tm.OnNewTab != nil {
+			tm.OnNewTab()
+		}
+	case hitMenuButton:
 		if tm.OnMenuClick != nil {
 			tm.OnMenuClick()
 		}
-		return true
-
-	case HitCloseButton:
-		if tabIndex >= 0 && tabIndex < len(tm.tabs) {
-			tm.RemoveTab(tabIndex)
-		}
-		return true
-
-	case HitTab:
-		if tabIndex >= 0 && tabIndex < len(tm.tabs) {
-			tm.SetActiveTab(tabIndex)
-		}
-		return true
+	case hitCloseButton:
+		tm.RemoveTab(tabIndex)
+	case hitTab:
+		tm.SetActiveTab(tabIndex)
 	}
-
-	return false
 }
 
 // Paint draws the entire title bar with tabs
-func (tm *TabManager[T]) Paint(hdc HDC, width int32) {
+func (tm *TabManager[T]) Paint(hdc hDc, width int32) {
 	// Draw background
-	bgColor := tm.bgColor
-	bgBrush := createSolidBrush(bgColor)
-	bgRect := RECT{Left: 0, Top: 0, Right: width, Bottom: tm.titleBarHeight}
+	bgBrush := tm.bgBrush
+	bgRect := rect{Left: 0, Top: 0, Right: width, Bottom: tm.titleBarHeight}
 	fillRect(hdc, &bgRect, bgBrush)
-	deleteObject(HANDLE(bgBrush))
 
 	// Set up drawing
 	setBkMode(hdc, TRANSPARENT)
-	oldFont := selectObject(hdc, HANDLE(tm.font))
+	oldFont := selectObject(hdc, handle(tm.font))
 
 	// Draw each tab
 	for i, tab := range tm.tabs {
@@ -445,14 +412,14 @@ func (tm *TabManager[T]) Paint(hdc HDC, width int32) {
 }
 
 // drawTab draws a single tab with modern styling
-func (tm *TabManager[T]) drawTab(hdc HDC, index int, tab *Tab[T	], totalWidth int32) {
-	rect := tm.getTabRect(index, totalWidth)
+func (tm *TabManager[T]) drawTab(hdc hDc, index int, tab *Tab[T], totalWidth int32) {
+	tabRect := tm.getTabRect(index, totalWidth)
 	isActive := index == tm.activeTabIndex
-	isHover := index == tm.hoverTabIndex && !tm.hoverCloseBtn
+	isHover := index == tm.hoverTabIndex
 
 	// Determine colors
-	var bgColor COLORREF
-	var textColor COLORREF
+	var bgColor colorRef
+	var textColor colorRef
 
 	if isActive {
 		bgColor = tm.tabActiveColor
@@ -467,130 +434,136 @@ func (tm *TabManager[T]) drawTab(hdc HDC, index int, tab *Tab[T	], totalWidth in
 
 	// Draw tab background for active or hover tabs
 	if isActive || isHover {
-		brush := createSolidBrush(bgColor)
-		pen := createPen(PS_SOLID, 1, bgColor)
-		oldBrush := selectObject(hdc, HANDLE(brush))
-		oldPen := selectObject(hdc, HANDLE(pen))
-
-		// Draw rounded rectangle for the tab, but don't extend beyond the separator line
-		// The separator line is at titleBarHeight - 1, so limit the bottom to that
-		maxBottom := tm.titleBarHeight - 1
-		roundedBottom := min(rect.Bottom+tm.cornerRadius, maxBottom)
-
-		roundRect(hdc, rect.Left, rect.Top, rect.Right, roundedBottom, tm.cornerRadius*2, tm.cornerRadius*2)
-
-		// Fill bottom part to make only top corners rounded, but respect the separator line
-		bottomRect := RECT{
-			Left:   rect.Left,
-			Top:    rect.Bottom - tm.cornerRadius,
-			Right:  rect.Right,
-			Bottom: maxBottom,
-		}
-		fillRect(hdc, &bottomRect, brush)
-
-		selectObject(hdc, oldPen)
-		selectObject(hdc, oldBrush)
-		deleteObject(HANDLE(pen))
-		deleteObject(HANDLE(brush))
+		tm.drawRoundedTabBackground(hdc, tabRect, bgColor)
 	}
 
 	// Draw tab text
 	setTextColor(hdc, textColor)
-	textRect := RECT{
-		Left:   rect.Left + tm.tabPadding,
-		Top:    rect.Top,
-		Right:  rect.Right - tm.tabPadding,
-		Bottom: rect.Bottom,
+	textRect := &rect{
+		Left:   tabRect.Left + tm.tabPadding,
+		Top:    tabRect.Top,
+		Right:  tabRect.Right - tm.tabPadding,
+		Bottom: tabRect.Bottom,
 	}
 
 	// Leave room for close button
 	if isActive || isHover {
-		textRect.Right -= tm.closeSize + 4
+		textRect.Right -= tm.closeSize + 8
 	}
 
-	drawText(hdc, tab.Title, &textRect, DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX)
+	drawText(hdc, tab.Title, textRect, DT_LEFT|DT_VCENTER|DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX)
 
 	// Draw close button if applicable
 	if isActive || isHover {
-		tm.drawCloseButton(hdc, rect, tm.hoverCloseBtn && index == tm.hoverTabIndex)
+		tm.drawCloseButton(hdc, tabRect, isHover)
 	}
 }
 
+// drawRoundedTabBackground draws a rounded rectangle background for a tab
+func (tm *TabManager[T]) drawRoundedTabBackground(hdc hDc, tabRect *rect, color colorRef) {
+	brush := createSolidBrush(color)
+	pen := createPen(PS_SOLID, 1, color)
+	oldBrush := selectObject(hdc, handle(brush))
+	oldPen := selectObject(hdc, handle(pen))
+
+	// Draw rounded rectangle for the tab, but don't extend beyond the separator line
+	maxBottom := tm.titleBarHeight - 1
+
+	roundRect(hdc, tabRect, tm.cornerRadius*2, tm.cornerRadius*2)
+
+	// Fill bottom part to make only top corners rounded
+	bottomRect := &rect{
+		Left:   tabRect.Left,
+		Top:    tabRect.Bottom - tm.cornerRadius,
+		Right:  tabRect.Right,
+		Bottom: maxBottom,
+	}
+	fillRect(hdc, bottomRect, brush)
+
+	selectObject(hdc, oldPen)
+	selectObject(hdc, oldBrush)
+	deleteObject(handle(pen))
+	deleteObject(handle(brush))
+}
+
 // drawCloseButton draws the X button for closing a tab
-func (tm *TabManager[T]) drawCloseButton(hdc HDC, tabRect RECT, isHover bool) {
+func (tm *TabManager[T]) drawCloseButton(hdc hDc, tabRect *rect, isHover bool) {
 	closeRect := tm.getCloseRect(tabRect)
 
 	// Draw hover background (rounded)
 	if isHover {
-		brush := createSolidBrush(tm.closeBtnHoverBg)
-		pen := createPen(PS_SOLID, 1, tm.closeBtnHoverBg)
-		oldBrush := selectObject(hdc, HANDLE(brush))
-		oldPen := selectObject(hdc, HANDLE(pen))
-
-		// Draw circular background
-		roundRect(hdc, closeRect.Left-3, closeRect.Top-3, closeRect.Right+3, closeRect.Bottom+3, 8, 8)
-
-		selectObject(hdc, oldPen)
-		selectObject(hdc, oldBrush)
-		deleteObject(HANDLE(pen))
-		deleteObject(HANDLE(brush))
+		tm.drawRoundedRect(hdc, closeRect, 8, tm.closeBtnHoverBg)
 	}
 
 	// Draw X
-	var penColor COLORREF
+	penColor := tm.closeBtnColor
 	if isHover {
 		penColor = tm.closeBtnHover
-	} else {
-		penColor = tm.closeBtnColor
 	}
 
-	pen := createPen(PS_SOLID, 1, penColor)
-	oldPen := selectObject(hdc, HANDLE(pen))
-
-	padding := int32(4)
-	// Draw X lines
-	moveToEx(hdc, closeRect.Left+padding, closeRect.Top+padding, nil)
-	lineTo(hdc, closeRect.Right-padding+1, closeRect.Bottom-padding+1)
-	moveToEx(hdc, closeRect.Right-padding, closeRect.Top+padding, nil)
-	lineTo(hdc, closeRect.Left+padding-1, closeRect.Bottom-padding+1)
-
-	selectObject(hdc, oldPen)
-	deleteObject(HANDLE(pen))
+	tm.drawX(hdc, closeRect, penColor, 4)
 }
 
 // drawAddButton draws the + button for adding tabs
-func (tm *TabManager[T]) drawAddButton(hdc HDC, totalWidth int32) {
+func (tm *TabManager[T]) drawAddButton(hdc hDc, totalWidth int32) {
 	rect := tm.getAddButtonRect(totalWidth)
 
 	// Draw hover background
 	if tm.hoverAddBtn {
-		brush := createSolidBrush(tm.tabHoverColor)
-		pen := createPen(PS_SOLID, 1, tm.tabHoverColor)
-		oldBrush := selectObject(hdc, HANDLE(brush))
-		oldPen := selectObject(hdc, HANDLE(pen))
-
-		roundRect(hdc, rect.Left, rect.Top, rect.Right, rect.Bottom, 6, 6)
-
-		selectObject(hdc, oldPen)
-		selectObject(hdc, oldBrush)
-		deleteObject(HANDLE(pen))
-		deleteObject(HANDLE(brush))
+		tm.drawRoundedRect(hdc, rect, 6, tm.tabHoverColor)
 	}
 
-	// Draw + sign
-	var penColor COLORREF
-	if tm.hoverAddBtn {
-		penColor = tm.addBtnHover
-	} else {
-		penColor = tm.addBtnColor
+	tm.drawPlus(hdc, rect, 5)
+}
+
+// drawMenuButton draws the hamburger menu button
+func (tm *TabManager[T]) drawMenuButton(hdc hDc, totalWidth int32) {
+	rect := tm.getMenuButtonRect(totalWidth)
+
+	// Draw hover background
+	if tm.hoverMenuBtn {
+		tm.drawRoundedRect(hdc, rect, 6, tm.tabHoverColor)
 	}
 
-	pen := createPen(PS_SOLID, 1, penColor)
-	oldPen := selectObject(hdc, HANDLE(pen))
+	tm.drawHamburger(hdc, rect, 7, 4)
+}
+
+// drawRoundedRect draws a filled rounded rectangle (helper method)
+func (tm *TabManager[T]) drawRoundedRect(hdc hDc, rect *rect, cornerRadius int32, color colorRef) {
+	brush := createSolidBrush(color)
+	pen := createPen(PS_SOLID, 1, color)
+	oldBrush := selectObject(hdc, handle(brush))
+	oldPen := selectObject(hdc, handle(pen))
+
+	roundRect(hdc, rect, cornerRadius, cornerRadius)
+
+	selectObject(hdc, oldPen)
+	selectObject(hdc, oldBrush)
+	deleteObject(handle(pen))
+	deleteObject(handle(brush))
+}
+
+// drawX draws an X icon (helper method)
+func (tm *TabManager[T]) drawX(hdc hDc, rect *rect, color colorRef, padding int32) {
+	pen := createPen(PS_SOLID, 1, color)
+	oldPen := selectObject(hdc, handle(pen))
+
+	// Draw X lines
+	moveToEx(hdc, rect.Left+padding, rect.Top+padding, nil)
+	lineTo(hdc, rect.Right-padding+1, rect.Bottom-padding+1)
+	moveToEx(hdc, rect.Right-padding, rect.Top+padding, nil)
+	lineTo(hdc, rect.Left+padding-1, rect.Bottom-padding+1)
+
+	selectObject(hdc, oldPen)
+	deleteObject(handle(pen))
+}
+
+// drawPlus draws a + icon (helper method)
+func (tm *TabManager[T]) drawPlus(hdc hDc, rect *rect, size int32) {
+	oldPen := selectObject(hdc, handle(tm.btnPen))
 
 	centerX := (rect.Left + rect.Right) / 2
 	centerY := (rect.Top + rect.Bottom) / 2
-	size := int32(5)
 
 	// Horizontal line
 	moveToEx(hdc, centerX-size, centerY, nil)
@@ -601,43 +574,14 @@ func (tm *TabManager[T]) drawAddButton(hdc HDC, totalWidth int32) {
 	lineTo(hdc, centerX, centerY+size+1)
 
 	selectObject(hdc, oldPen)
-	deleteObject(HANDLE(pen))
 }
 
-// drawMenuButton draws the hamburger menu button
-func (tm *TabManager[T]) drawMenuButton(hdc HDC, totalWidth int32) {
-	rect := tm.getMenuButtonRect(totalWidth)
-
-	// Draw hover background
-	if tm.hoverMenuBtn {
-		brush := createSolidBrush(tm.tabHoverColor)
-		pen := createPen(PS_SOLID, 1, tm.tabHoverColor)
-		oldBrush := selectObject(hdc, HANDLE(brush))
-		oldPen := selectObject(hdc, HANDLE(pen))
-
-		roundRect(hdc, rect.Left, rect.Top, rect.Right, rect.Bottom, 6, 6)
-
-		selectObject(hdc, oldPen)
-		selectObject(hdc, oldBrush)
-		deleteObject(HANDLE(pen))
-		deleteObject(HANDLE(brush))
-	}
-
-	// Draw three horizontal lines (hamburger)
-	var penColor COLORREF
-	if tm.hoverMenuBtn {
-		penColor = tm.addBtnHover
-	} else {
-		penColor = tm.addBtnColor
-	}
-
-	pen := createPen(PS_SOLID, 1, penColor)
-	oldPen := selectObject(hdc, HANDLE(pen))
+// drawHamburger draws a hamburger menu icon (helper method)
+func (tm *TabManager[T]) drawHamburger(hdc hDc, rect *rect, width, spacing int32) {
+	oldPen := selectObject(hdc, handle(tm.btnPen))
 
 	centerX := (rect.Left + rect.Right) / 2
 	centerY := (rect.Top + rect.Bottom) / 2
-	width := int32(7)
-	spacing := int32(4)
 
 	// Three horizontal lines
 	for i := int32(-1); i <= 1; i++ {
@@ -647,42 +591,22 @@ func (tm *TabManager[T]) drawMenuButton(hdc HDC, totalWidth int32) {
 	}
 
 	selectObject(hdc, oldPen)
-	deleteObject(HANDLE(pen))
 }
 
 // drawBottomLine draws a subtle separator line at the bottom of the tab bar
-func (tm *TabManager[T]) drawBottomLine(hdc HDC, totalWidth int32) {
-	pen := createPen(PS_SOLID, 1, tm.borderColor)
-	oldPen := selectObject(hdc, HANDLE(pen))
-
-	// Find active tab rect to skip drawing line under it
-	var activeRect *RECT
-	for i := range tm.tabs {
-		if i == tm.activeTabIndex {
-			r := tm.getTabRect(i, totalWidth)
-			activeRect = &r
-			break
-		}
-	}
-
+func (tm *TabManager[T]) drawBottomLine(hdc hDc, totalWidth int32) {
+	oldPen := selectObject(hdc, handle(tm.tabBorderPen))
 	y := tm.titleBarHeight - 1
-
-	if activeRect == nil {
-		// No active tab, draw full line
-		moveToEx(hdc, 0, y, nil)
-		lineTo(hdc, totalWidth, y)
-	} else {
-		// Draw line with gap for active tab
-		if activeRect.Left > 0 {
-			moveToEx(hdc, 0, y, nil)
-			lineTo(hdc, activeRect.Left, y)
-		}
-		if activeRect.Right < totalWidth {
-			moveToEx(hdc, activeRect.Right, y, nil)
-			lineTo(hdc, totalWidth, y)
-		}
-	}
-
+	moveToEx(hdc, 0, y, nil)
+	lineTo(hdc, totalWidth, y)
 	selectObject(hdc, oldPen)
-	deleteObject(HANDLE(pen))
+}
+
+// Destroy cleans up all OS resources allocated by the TabManager
+// This should be called before the TabManager is discarded to prevent resource leaks
+func (tm *TabManager[T]) Destroy() {
+	deleteObject(handle(tm.font))
+	deleteObject(handle(tm.bgBrush))
+	deleteObject(handle(tm.tabBorderPen))
+	deleteObject(handle(tm.btnPen))
 }

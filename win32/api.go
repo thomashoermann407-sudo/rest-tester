@@ -18,12 +18,14 @@ var (
 	procLoadIconW            = user32.NewProc("LoadIconW")
 	procRegisterClassExW     = user32.NewProc("RegisterClassExW")
 	procCreateWindowExW      = user32.NewProc("CreateWindowExW")
+	procDestroyWindow        = user32.NewProc("DestroyWindow")
 	procShowWindow           = user32.NewProc("ShowWindow")
 	procUpdateWindow         = user32.NewProc("UpdateWindow")
 	procGetMessageW          = user32.NewProc("GetMessageW")
 	procTranslateMessage     = user32.NewProc("TranslateMessage")
 	procDispatchMessageW     = user32.NewProc("DispatchMessageW")
 	procPostQuitMessage      = user32.NewProc("PostQuitMessage")
+	procPostMessageW         = user32.NewProc("PostMessageW")
 	procDefWindowProcW       = user32.NewProc("DefWindowProcW")
 	procMessageBoxW          = user32.NewProc("MessageBoxW")
 	procBeginPaint           = user32.NewProc("BeginPaint")
@@ -58,27 +60,27 @@ var (
 	procSetWindowTheme       = uxtheme.NewProc("SetWindowTheme")
 )
 
-func getModuleHandle(name *uint16) HINSTANCE {
+func getModuleHandle(name *uint16) hInstance {
 	ret, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(name)))
-	return HINSTANCE(ret)
+	return hInstance(ret)
 }
 
-func loadCursor(instance HINSTANCE, cursorName uintptr) HCURSOR {
+func loadCursor(instance hInstance, cursorName uintptr) hCursor {
 	ret, _, _ := procLoadCursorW.Call(uintptr(instance), cursorName)
-	return HCURSOR(ret)
+	return hCursor(ret)
 }
 
-func loadIcon(instance HINSTANCE, iconName uintptr) HICON {
+func loadIcon(instance hInstance, iconName uintptr) hIcon {
 	ret, _, _ := procLoadIconW.Call(uintptr(instance), iconName)
-	return HICON(ret)
+	return hIcon(ret)
 }
 
-func registerClassEx(wcx *WNDCLASSEX) uint16 {
+func registerClassEx(wcx *wndClassEx) uint16 {
 	ret, _, _ := procRegisterClassExW.Call(uintptr(unsafe.Pointer(wcx)))
 	return uint16(ret)
 }
 
-func createWindowEx(exStyle uint32, className, windowName *uint16, style uint32, x, y, width, height int32, parent HWND, menu HMENU, instance HINSTANCE, param unsafe.Pointer) HWND {
+func createWindowEx(exStyle uint32, className, windowName *uint16, style uint32, x, y, width, height int32, parent hWnd, menu hMenu, instance hInstance, param unsafe.Pointer) hWnd {
 	ret, _, _ := procCreateWindowExW.Call(
 		uintptr(exStyle),
 		uintptr(unsafe.Pointer(className)),
@@ -93,15 +95,20 @@ func createWindowEx(exStyle uint32, className, windowName *uint16, style uint32,
 		uintptr(instance),
 		uintptr(param),
 	)
-	return HWND(ret)
+	return hWnd(ret)
 }
 
-func updateWindow(hwnd HWND) bool {
+func destroyWindow(hwnd hWnd) bool {
+	ret, _, _ := procDestroyWindow.Call(uintptr(hwnd))
+	return ret != 0
+}
+
+func updateWindow(hwnd hWnd) bool {
 	ret, _, _ := procUpdateWindow.Call(uintptr(hwnd))
 	return ret != 0
 }
 
-func getMessage(msg *MSG, hwnd HWND, msgFilterMin, msgFilterMax uint32) int32 {
+func getMessage(msg *msg, hwnd hWnd, msgFilterMin, msgFilterMax uint32) int32 {
 	ret, _, _ := procGetMessageW.Call(
 		uintptr(unsafe.Pointer(msg)),
 		uintptr(hwnd),
@@ -111,12 +118,12 @@ func getMessage(msg *MSG, hwnd HWND, msgFilterMin, msgFilterMax uint32) int32 {
 	return int32(ret)
 }
 
-func translateMessage(msg *MSG) bool {
+func translateMessage(msg *msg) bool {
 	ret, _, _ := procTranslateMessage.Call(uintptr(unsafe.Pointer(msg)))
 	return ret != 0
 }
 
-func dispatchMessage(msg *MSG) uintptr {
+func dispatchMessage(msg *msg) uintptr {
 	ret, _, _ := procDispatchMessageW.Call(uintptr(unsafe.Pointer(msg)))
 	return ret
 }
@@ -125,7 +132,17 @@ func postQuitMessage(exitCode int32) {
 	procPostQuitMessage.Call(uintptr(exitCode))
 }
 
-func defWindowProc(hwnd HWND, msg uint32, wParam, lParam uintptr) uintptr {
+func postMessage(hwnd hWnd, msg uint32, wParam, lParam uintptr) bool {
+	ret, _, _ := procPostMessageW.Call(
+		uintptr(hwnd),
+		uintptr(msg),
+		wParam,
+		lParam,
+	)
+	return ret != 0
+}
+
+func defWindowProc(hwnd hWnd, msg uint32, wParam, lParam uintptr) uintptr {
 	ret, _, _ := procDefWindowProcW.Call(
 		uintptr(hwnd),
 		uintptr(msg),
@@ -135,22 +152,22 @@ func defWindowProc(hwnd HWND, msg uint32, wParam, lParam uintptr) uintptr {
 	return ret
 }
 
-func beginPaint(hwnd HWND, ps *PAINTSTRUCT) HDC {
+func beginPaint(hwnd hWnd, ps *paintStruct) hDc {
 	ret, _, _ := procBeginPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(ps)))
-	return HDC(ret)
+	return hDc(ret)
 }
 
-func endPaint(hwnd HWND, ps *PAINTSTRUCT) bool {
+func endPaint(hwnd hWnd, ps *paintStruct) bool {
 	ret, _, _ := procEndPaint.Call(uintptr(hwnd), uintptr(unsafe.Pointer(ps)))
 	return ret != 0
 }
 
-func getClientRect(hwnd HWND, rect *RECT) bool {
+func getClientRect(hwnd hWnd, rect *rect) bool {
 	ret, _, _ := procGetClientRect.Call(uintptr(hwnd), uintptr(unsafe.Pointer(rect)))
 	return ret != 0
 }
 
-func invalidateRect(hwnd HWND, rect *RECT, erase bool) bool {
+func invalidateRect(hwnd hWnd, rect *rect, erase bool) bool {
 	var eraseVal uintptr
 	if erase {
 		eraseVal = 1
@@ -159,78 +176,81 @@ func invalidateRect(hwnd HWND, rect *RECT, erase bool) bool {
 	return ret != 0
 }
 
-func fillRect(hdc HDC, rect *RECT, brush HBRUSH) int32 {
+func fillRect(hdc hDc, rect *rect, brush hBrush) int32 {
 	ret, _, _ := procFillRect.Call(uintptr(hdc), uintptr(unsafe.Pointer(rect)), uintptr(brush))
 	return int32(ret)
 }
 
-func drawText(hdc HDC, text string, rect *RECT, format uint32) int32 {
+func drawText(hdc hDc, text string, rect *rect, format uint32) int32 {
 	textPtr := StringToUTF16Ptr(text)
 	ret, _, _ := procDrawTextW.Call(uintptr(hdc), uintptr(unsafe.Pointer(textPtr)), uintptr(len(text)), uintptr(unsafe.Pointer(rect)), uintptr(format))
 	return int32(ret)
 }
 
-func setBkMode(hdc HDC, mode int32) int32 {
+func setBkMode(hdc hDc, mode int32) int32 {
 	ret, _, _ := procSetBkMode.Call(uintptr(hdc), uintptr(mode))
 	return int32(ret)
 }
 
-func setTextColor(hdc HDC, color COLORREF) COLORREF {
+func setTextColor(hdc hDc, color colorRef) colorRef {
 	ret, _, _ := procSetTextColor.Call(uintptr(hdc), uintptr(color))
-	return COLORREF(ret)
+	return colorRef(ret)
 }
 
-func createSolidBrush(color COLORREF) HBRUSH {
+func createSolidBrush(color colorRef) hBrush {
 	ret, _, _ := procCreateSolidBrush.Call(uintptr(color))
-	return HBRUSH(ret)
+	return hBrush(ret)
 }
 
-func deleteObject(obj HANDLE) bool {
+func deleteObject(obj handle) bool {
+	if(obj == 0) {
+		return false
+	}
 	ret, _, _ := procDeleteObject.Call(uintptr(obj))
 	return ret != 0
 }
 
-func selectObject(hdc HDC, obj HANDLE) HANDLE {
+func selectObject(hdc hDc, obj handle) handle {
 	ret, _, _ := procSelectObject.Call(uintptr(hdc), uintptr(obj))
-	return HANDLE(ret)
+	return handle(ret)
 }
 
-func createFont(height, width, escapement, orientation, weight int32, italic, underline, strikeOut, charSet, outputPrecision, clipPrecision, quality, pitchAndFamily uint32, faceName string) HFONT {
+func createFont(height, width, escapement, orientation, weight int32, italic, underline, strikeOut, charSet, outputPrecision, clipPrecision, quality, pitchAndFamily uint32, faceName string) hFont {
 	ret, _, _ := procCreateFontW.Call(
 		uintptr(height), uintptr(width), uintptr(escapement), uintptr(orientation), uintptr(weight),
 		uintptr(italic), uintptr(underline), uintptr(strikeOut), uintptr(charSet),
 		uintptr(outputPrecision), uintptr(clipPrecision), uintptr(quality), uintptr(pitchAndFamily),
 		uintptr(unsafe.Pointer(StringToUTF16Ptr(faceName))),
 	)
-	return HFONT(ret)
+	return hFont(ret)
 }
 
-func createPen(style, width int32, color COLORREF) HPEN {
+func createPen(style, width int32, color colorRef) hPen {
 	ret, _, _ := procCreatePen.Call(uintptr(style), uintptr(width), uintptr(color))
-	return HPEN(ret)
+	return hPen(ret)
 }
 
-func roundRect(hdc HDC, left, top, right, bottom, width, height int32) bool {
-	ret, _, _ := procRoundRect.Call(uintptr(hdc), uintptr(left), uintptr(top), uintptr(right), uintptr(bottom), uintptr(width), uintptr(height))
+func roundRect(hdc hDc, rect *rect, width, height int32) bool {
+	ret, _, _ := procRoundRect.Call(uintptr(hdc), uintptr(rect.Left), uintptr(rect.Top), uintptr(rect.Right), uintptr(rect.Bottom), uintptr(width), uintptr(height))
 	return ret != 0
 }
 
-func moveToEx(hdc HDC, x, y int32, point *POINT) bool {
+func moveToEx(hdc hDc, x, y int32, point *point) bool {
 	ret, _, _ := procMoveToEx.Call(uintptr(hdc), uintptr(x), uintptr(y), uintptr(unsafe.Pointer(point)))
 	return ret != 0
 }
 
-func lineTo(hdc HDC, x, y int32) bool {
+func lineTo(hdc hDc, x, y int32) bool {
 	ret, _, _ := procLineTo.Call(uintptr(hdc), uintptr(x), uintptr(y))
 	return ret != 0
 }
 
-// rgb creates a COLORREF from red, green, blue values
-func rgb(r, g, b byte) COLORREF {
-	return COLORREF(uint32(r) | uint32(g)<<8 | uint32(b)<<16)
+// rgb creates a colorref from red, green, blue values
+func rgb(r, g, b byte) colorRef {
+	return colorRef(uint32(r) | uint32(g)<<8 | uint32(b)<<16)
 }
 
-func sendMessage(hwnd HWND, msg uint32, wParam, lParam uintptr) uintptr {
+func sendMessage(hwnd hWnd, msg uint32, wParam, lParam uintptr) uintptr {
 	ret, _, _ := procSendMessageW.Call(uintptr(hwnd), uintptr(msg), wParam, lParam)
 	return ret
 }
@@ -262,6 +282,28 @@ const (
 	ICC_LINK_CLASS         = 0x00008000
 )
 
+func init() {
+			initCommonControls(
+			ICC_WIN95_CLASSES |
+				ICC_STANDARD_CLASSES |
+				ICC_BAR_CLASSES |
+				ICC_TAB_CLASSES |
+				ICC_UPDOWN_CLASS |
+				ICC_PROGRESS_CLASS |
+				ICC_HOTKEY_CLASS |
+				ICC_ANIMATE_CLASS |
+				ICC_DATE_CLASSES |
+				ICC_USEREX_CLASSES |
+				ICC_COOL_CLASSES |
+				ICC_INTERNET_CLASSES |
+				ICC_PAGESCROLLER_CLASS |
+				ICC_NATIVEFNTCTL_CLASS |
+				ICC_LINK_CLASS |
+				ICC_LISTVIEW_CLASSES |
+				ICC_TREEVIEW_CLASSES,
+		)
+}
+
 // initCommonControls initializes common controls
 func initCommonControls(classes uint32) bool {
 	icc := INITCOMMONCONTROLSEX{
@@ -274,7 +316,7 @@ func initCommonControls(classes uint32) bool {
 
 // SetWindowTheme sets the visual theme for a window/control
 // Pass empty strings to use default theme, or specific theme names
-func setWindowTheme(hwnd HWND, appName, idList string) error {
+func setWindowTheme(hwnd hWnd, appName, idList string) error {
 	var appNamePtr, idListPtr *uint16
 	if appName != "" {
 		appNamePtr = StringToUTF16Ptr(appName)

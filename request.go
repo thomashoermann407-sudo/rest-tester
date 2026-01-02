@@ -5,17 +5,21 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
+	"time"
 )
 
 type Params map[string]string
 
 func (p Params) Format() string {
 	var parts []string
-	for key, value := range p {
+	for _, key := range slices.Sorted(maps.Keys(p)) {
+		value := p[key]
 		parts = append(parts, fmt.Sprintf("%s: %s", key, value))
 	}
 	return strings.Join(parts, "\r\n")
@@ -60,21 +64,25 @@ func NewRequest(name string) *Request {
 	}
 }
 
-func sendRequest(request *Request, settings *Settings, callback func(response string, err error)) {
+func sendRequest(request *Request, settings *Settings, timeoutInMs int64, callback func(response string, err error)) {
 
-	v := url.Values{}
-	for key, value := range request.QueryParams {
-		v.Set(key, value)
+	var requestUrl string
+	if len(request.QueryParams) == 0 {
+		requestUrl = request.URL
+	} else {
+		v := url.Values{}
+		for key, value := range request.QueryParams {
+			v.Set(key, value)
+		}
+		requestUrl = request.URL + "?" + v.Encode()
 	}
-	url := buildURLWithQueryParams(request.URL, v.Encode())
-
 	// Create request
 	var reqBody io.Reader
 	if request.Method == "POST" || request.Method == "PUT" || request.Method == "PATCH" {
 		reqBody = strings.NewReader(request.Body)
 	}
 
-	req, err := http.NewRequest(request.Method, url, reqBody)
+	req, err := http.NewRequest(request.Method, requestUrl, reqBody)
 	if err != nil {
 		callback("", err)
 		return
@@ -89,8 +97,8 @@ func sendRequest(request *Request, settings *Settings, callback func(response st
 		}
 	}
 
-	// Create HTTP client with TLS configuration
-	client, err := createHTTPClient(settings)
+	// Create HTTP client with TLS configuration and timeout
+	client, err := createHTTPClient(settings, timeoutInMs)
 	if err != nil {
 		callback("", err)
 		return
@@ -119,15 +127,12 @@ func sendRequest(request *Request, settings *Settings, callback func(response st
 }
 
 // createHTTPClient creates an HTTP client with optional TLS client certificate
-func createHTTPClient(settings *Settings) (*http.Client, error) {
-	client := &http.Client{}
-
-	// Check if we have certificate configuration
-	if settings.Certificate == nil {
-		return client, nil
+func createHTTPClient(settings *Settings, timeoutInMs int64) (*http.Client, error) {
+	client := &http.Client{
+		Timeout: time.Duration(timeoutInMs) * time.Millisecond,
 	}
 
-	cert := settings.Certificate
+	cert := &settings.Certificate
 	certFile := strings.TrimSpace(cert.CertFile)
 	keyFile := strings.TrimSpace(cert.KeyFile)
 

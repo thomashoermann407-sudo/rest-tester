@@ -2,35 +2,34 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"hoermi.com/rest-test/win32"
 )
 
-// Panel visibility groups
-type PanelGroup interface {
-	Controller() []win32.Controller
-	Resize(tabHeight, width, height int32)
-
-	// TODO: Use generic
-	SaveState()
-	SetState(data any)
-
-	HandleCommand(id int, notifyCode int)
-}
-
-type Panels map[PanelGroupName]PanelGroup
-
-type PanelGroupName string
-
 const (
-	PanelRequest     PanelGroupName = "request"
-	PanelProjectView PanelGroupName = "projectView"
-	PanelSettings    PanelGroupName = "settings"
-	PanelWelcome     PanelGroupName = "welcome"
+	// Common spacing
+	layoutPadding = int32(12)
+
+	// Standard control heights
+	layoutColumnWidth     = int32(400)
+	layoutLabelHeight     = int32(20)
+	layoutInputHeight     = int32(26)
+	layoutIconInputHeight = int32(32)
+	layoutButtonWidth     = int32(120)
+	layoutListHeight      = int32(300)
+
+	PanelRequest     win32.PanelGroupName = "request"
+	PanelProjectView win32.PanelGroupName = "projectView"
+	PanelSettings    win32.PanelGroupName = "settings"
+	PanelWelcome     win32.PanelGroupName = "welcome"
 )
 
+var httpMethods = []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
+
 type requestPanelGroup struct {
+	*win32.ControllerGroup
 	methodCombo    *win32.ComboBoxControl
 	urlInput       *win32.Control
 	headersInput   *win32.Control
@@ -39,24 +38,14 @@ type requestPanelGroup struct {
 	responseOutput *win32.Control
 	statusLabel    *win32.Control
 	sendBtn        *win32.ButtonControl
-	// Labels for request panel
-	methodLabel   *win32.Control
-	urlLabel      *win32.Control
-	headersLabel  *win32.Control
-	queryLabel    *win32.Control
-	bodyLabel     *win32.Control
-	responseLabel *win32.Control
+	methodLabel    *win32.Control
+	urlLabel       *win32.Control
+	headersLabel   *win32.Control
+	queryLabel     *win32.Control
+	bodyLabel      *win32.Control
+	responseLabel  *win32.Control
 
-	projectWindow *ProjectWindow
-	content       *RequestTabContent
-}
-
-func (r *requestPanelGroup) Controller() []win32.Controller {
-	return []win32.Controller{
-		r.methodCombo, r.urlInput, r.headersInput, r.queryInput, r.bodyInput,
-		r.responseOutput, r.statusLabel, r.sendBtn,
-		r.methodLabel, r.urlLabel, r.headersLabel, r.queryLabel, r.bodyLabel, r.responseLabel,
-	}
+	content *RequestTabContent
 }
 
 func (r *requestPanelGroup) Resize(tabHeight, width, height int32) {
@@ -84,33 +73,44 @@ func (r *requestPanelGroup) Resize(tabHeight, width, height int32) {
 	methodComboWidth := int32(90)
 	sendBtnWidth := int32(90)
 
-	r.methodCombo.MoveWindow(layoutPadding+methodLabelWidth+layoutPadding, y, methodComboWidth, 200, true)
+	// Position method label and combo
+	r.methodLabel.MoveWindow(layoutPadding, y+3, methodLabelWidth, layoutLabelHeight)
+	r.methodCombo.MoveWindow(layoutPadding+methodLabelWidth+layoutPadding, y, methodComboWidth, 200)
 
+	// Position URL label and input
 	urlLabelWidth := int32(30)
-	urlX := layoutPadding + methodLabelWidth + layoutPadding + methodComboWidth + layoutPadding + urlLabelWidth + layoutPadding
-	urlWidth := availableWidth - methodLabelWidth - methodComboWidth - urlLabelWidth - sendBtnWidth - layoutPadding*2 - layoutPadding*2
-	r.urlInput.MoveWindow(urlX, y, urlWidth, layoutInputHeight, true)
-	r.sendBtn.MoveWindow(width-layoutPadding-sendBtnWidth, y, sendBtnWidth, layoutInputHeight, true)
+	urlX := layoutPadding + methodLabelWidth + layoutPadding + methodComboWidth + layoutPadding
+	r.urlLabel.MoveWindow(urlX, y+3, urlLabelWidth, layoutLabelHeight)
+
+	urlInputX := urlX + urlLabelWidth + layoutPadding
+	urlWidth := availableWidth - methodLabelWidth - methodComboWidth - urlLabelWidth - sendBtnWidth - layoutPadding*4
+	r.urlInput.MoveWindow(urlInputX, y, urlWidth, layoutInputHeight)
+	r.sendBtn.MoveWindow(width-layoutPadding-sendBtnWidth, y, sendBtnWidth, layoutInputHeight)
 
 	// === Query Parameters & Headers Section ===
 	y += layoutInputHeight + layoutPadding
-	y += layoutLabelHeight + layoutPadding
 
-	// Split width 50/50 for params and headers
+	// Position section labels
 	halfWidth := (availableWidth - layoutPadding) / 2
+	r.queryLabel.MoveWindow(layoutPadding, y, 300, layoutLabelHeight)
+	r.headersLabel.MoveWindow(layoutPadding+halfWidth+layoutPadding, y, 300, layoutLabelHeight)
 
-	r.queryInput.MoveWindow(layoutPadding, y, halfWidth, paramsHeight, true)
-	r.headersInput.MoveWindow(layoutPadding+halfWidth+layoutPadding, y, halfWidth, paramsHeight, true)
+	y += layoutLabelHeight + layoutPadding
+	r.queryInput.MoveWindow(layoutPadding, y, halfWidth, paramsHeight)
+	r.headersInput.MoveWindow(layoutPadding+halfWidth+layoutPadding, y, halfWidth, paramsHeight)
 
 	// === Body Section ===
 	y += paramsHeight + layoutPadding
+	r.bodyLabel.MoveWindow(layoutPadding, y, 150, layoutLabelHeight)
 	y += layoutLabelHeight + layoutPadding
-	r.bodyInput.MoveWindow(layoutPadding, y, availableWidth, bodyHeight, true)
+	r.bodyInput.MoveWindow(layoutPadding, y, availableWidth, bodyHeight)
 
 	// === Response Section ===
 	y += bodyHeight + layoutPadding
+	r.responseLabel.MoveWindow(layoutPadding, y, 80, layoutLabelHeight)
+	r.statusLabel.MoveWindow(layoutPadding+90, y, 400, layoutLabelHeight)
 	y += layoutLabelHeight + layoutPadding
-	r.responseOutput.MoveWindow(layoutPadding, y, availableWidth, responseHeight, true)
+	r.responseOutput.MoveWindow(layoutPadding, y, availableWidth, responseHeight)
 }
 
 func (r *requestPanelGroup) SaveState() {
@@ -136,8 +136,7 @@ func (r *requestPanelGroup) SetState(data any) {
 	req := content.BoundRequest
 
 	// Set method
-	methods := []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}
-	for i, m := range methods {
+	for i, m := range httpMethods {
 		if m == req.Method {
 			r.methodCombo.SetCurSel(i)
 			break
@@ -152,141 +151,147 @@ func (r *requestPanelGroup) SetState(data any) {
 	r.statusLabel.SetText(content.Status)
 }
 
-func (r *requestPanelGroup) HandleCommand(id int, notifyCode int) {
-	switch id {
-	case r.sendBtn.ID:
+func createRequestPanel(projectWindow *ProjectWindow) *requestPanelGroup {
+	group := &requestPanelGroup{
+		methodLabel:    projectWindow.mainWindow.CreateLabel("Method"),
+		methodCombo:    projectWindow.mainWindow.CreateComboBox(),
+		urlLabel:       projectWindow.mainWindow.CreateLabel("URL"),
+		urlInput:       projectWindow.mainWindow.CreateInput(),
+		queryLabel:     projectWindow.mainWindow.CreateLabel("Query Parameters (one per line: key=value)"),
+		queryInput:     projectWindow.mainWindow.CreateCodeEdit(false),
+		headersLabel:   projectWindow.mainWindow.CreateLabel("Headers (one per line: Header: value)"),
+		headersInput:   projectWindow.mainWindow.CreateCodeEdit(false),
+		bodyLabel:      projectWindow.mainWindow.CreateLabel("Request Body"),
+		bodyInput:      projectWindow.mainWindow.CreateCodeEdit(false),
+		responseLabel:  projectWindow.mainWindow.CreateLabel("Response"),
+		statusLabel:    projectWindow.mainWindow.CreateLabel("Ready"),
+		responseOutput: projectWindow.mainWindow.CreateCodeEdit(true),
+	}
+	group.sendBtn = projectWindow.mainWindow.CreateButton("Send", func() {
 		// Get the bound request from the current tab
-		r.SaveState()
-		request := r.content.BoundRequest
+		group.SaveState()
+		request := group.content.BoundRequest
 		if request == nil {
-			r.statusLabel.SetText("❌ No request")
-			r.responseOutput.SetText("Error: No request bound to this tab")
+			group.statusLabel.SetText("❌ No request")
+			group.responseOutput.SetText("Error: No request bound to this tab")
 			return
 		}
 
-		r.statusLabel.SetText("⏳ Sending...")
-		r.responseOutput.SetText("")
-		go sendRequest(request, r.content.Settings, func(response string, err error) {
-			if err != nil {
-				r.statusLabel.SetText("❌ Error")
-				r.responseOutput.SetText(fmt.Sprintf("Error sending request:\r\n%v", err))
-				return
-			}
-			r.statusLabel.SetText("✅ Success")
-			r.responseOutput.SetText(response)
+		group.statusLabel.SetText("⏳ Sending...")
+		group.responseOutput.SetText("")
+
+		// Get timeout from project settings (default 30000ms if not set)
+		timeoutInMs := int64(30000)
+		if group.content.BoundProject != nil && group.content.BoundProject.Settings.TimeoutInMs > 0 {
+			timeoutInMs = group.content.BoundProject.Settings.TimeoutInMs
+		}
+
+		// Send request in background goroutine
+		go sendRequest(request, group.content.Settings, timeoutInMs, func(response string, err error) {
+			// Marshal the UI update back to the main thread using PostUICallback
+			projectWindow.mainWindow.PostUICallback(func() {
+				if err != nil {
+					group.statusLabel.SetText("❌ Error")
+					group.responseOutput.SetText(fmt.Sprintf("Error sending request:\r\n%v", err))
+					return
+				}
+				group.statusLabel.SetText("✅ Success")
+				group.responseOutput.SetText(response)
+			})
 		})
+	})
+	for _, method := range httpMethods {
+		group.methodCombo.AddString(method)
 	}
-}
-
-func createRequestPanel(projectWindow *ProjectWindow) *requestPanelGroup {
-	mainWindow := projectWindow.mainWindow
-	panelGroup := &requestPanelGroup{
-		projectWindow:  projectWindow,
-		methodLabel:    mainWindow.CreateLabel("Method", 0, 0, 0, 0),
-		methodCombo:    mainWindow.CreateComboBox(0, 0, 0, 0),
-		urlLabel:       mainWindow.CreateLabel("URL", 0, 0, 0, 0),
-		urlInput:       mainWindow.CreateInput(0, 0, 680, layoutInputHeight),
-		sendBtn:        mainWindow.CreateButton("Send", 0, 0, 0, layoutInputHeight),
-		queryLabel:     mainWindow.CreateLabel("Query Parameters (one per line: key=value)", 0, 0, 300, layoutLabelHeight),
-		queryInput:     mainWindow.CreateCodeEdit(0, 0, 520, 70, false),
-		headersLabel:   mainWindow.CreateLabel("Headers (one per line: Header: value)", 0, 0, 300, layoutLabelHeight),
-		headersInput:   mainWindow.CreateCodeEdit(0, 0, 520, 70, false),
-		bodyLabel:      mainWindow.CreateLabel("Request Body", 0, 0, 150, layoutLabelHeight),
-		bodyInput:      mainWindow.CreateCodeEdit(0, 0, defaultWindowWidth-layoutPadding*2, 120, false),
-		responseLabel:  mainWindow.CreateLabel("Response", 0, 0, 80, layoutLabelHeight),
-		statusLabel:    mainWindow.CreateLabel("Ready", 0, 0, 400, layoutLabelHeight),
-		responseOutput: mainWindow.CreateCodeEdit(0, 0, defaultWindowWidth-layoutPadding*2, 350, true),
-	}
-
-	for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"} {
-		panelGroup.methodCombo.AddString(method)
-	}
-	panelGroup.methodCombo.SetCurSel(0)
-
-	return panelGroup
+	group.methodCombo.SetCurSel(0)
+	group.ControllerGroup = win32.NewControllerGroup(group.methodCombo, group.urlInput, group.headersInput, group.queryInput, group.bodyInput,
+		group.responseOutput, group.statusLabel, group.sendBtn,
+		group.methodLabel, group.urlLabel, group.headersLabel, group.queryLabel, group.bodyLabel, group.responseLabel,
+	)
+	return group
 }
 
 type projectViewPanelGroup struct {
+	*win32.ControllerGroup
 	// Project View Panel controls
 	projectListBox *win32.ListBoxControl
 	openReqBtn     *win32.ButtonControl
 	deleteReqBtn   *win32.ButtonControl
 	projectInfo    *win32.Control
 	saveBtn        *win32.ButtonControl
+	timeoutLabel   *win32.Control
+	timeoutInput   *win32.Control
 
-	projectWindow *ProjectWindow
-	content       *ProjectViewTabContent
-}
-
-func (p *projectViewPanelGroup) Controller() []win32.Controller {
-	return []win32.Controller{
-		p.projectListBox, p.openReqBtn, p.deleteReqBtn, p.projectInfo, p.saveBtn,
-	}
+	content *ProjectViewTabContent
 }
 
 func (p *projectViewPanelGroup) Resize(tabHeight, width, height int32) {
-	// Currently no dynamic resizing needed for project view panel
+	y := layoutPadding * 4 // Below tab bar area
+	dy := layoutLabelHeight + layoutPadding
+	listWidth := int32(500)
+	listHeight := int32(450)
+	btnX := layoutPadding + listWidth + layoutPadding
+	p.projectInfo.MoveWindow(layoutPadding, y, listWidth, layoutLabelHeight)
+	p.projectListBox.MoveWindow(layoutPadding, y+dy, listWidth, listHeight)
+	p.openReqBtn.MoveWindow(btnX, y+dy, layoutButtonWidth, layoutInputHeight)
+	p.deleteReqBtn.MoveWindow(btnX, y+2*dy, layoutButtonWidth, layoutInputHeight)
+	p.saveBtn.MoveWindow(btnX, y+3*dy, layoutButtonWidth, layoutInputHeight)
+
+	// Timeout settings below the list
+	y += dy + listHeight + layoutPadding
+	p.timeoutLabel.MoveWindow(layoutPadding, y, int32(200), layoutLabelHeight)
+	y += layoutLabelHeight + layoutPadding/2
+	p.timeoutInput.MoveWindow(layoutPadding, y, int32(150), layoutInputHeight)
 }
 
 func (p *projectViewPanelGroup) SaveState() {
 	p.content.SelectedIndex = p.projectListBox.GetCurSel()
+
+	// Save timeout setting
+	timeoutText := p.timeoutInput.GetText()
+	if timeoutText != "" {
+		var timeout int64
+		fmt.Sscanf(timeoutText, "%d", &timeout)
+		if timeout > 0 {
+			p.content.BoundProject.Settings.TimeoutInMs = timeout
+		}
+	}
 }
 
 func (p *projectViewPanelGroup) SetState(data any) {
-	content, ok := data.(*ProjectViewTabContent)
-	if !ok {
-		return
-	}
-	if content == nil {
-		return
-	}
-	p.content = content
-	if p.projectListBox == nil || content.BoundProject == nil {
-		return
-	}
-
-	// Clear the listbox
-	p.projectListBox.ResetContent()
-
-	// Add all requests
-	for _, req := range content.BoundProject.Requests {
-		displayText := req.Method + " " + req.Name
-		if req.URL != "" {
-			shortURL := req.URL
-			if len(shortURL) > 40 {
-				shortURL = shortURL[:40] + "..."
-			}
-			displayText = req.Method + " " + shortURL
+	if content, ok := data.(*ProjectViewTabContent); ok {
+		p.content = content
+		if p.projectListBox == nil || content.BoundProject == nil {
+			return
 		}
-		p.projectListBox.AddString(displayText)
-	}
-	// Restore listbox selection
-	if content.SelectedIndex >= 0 {
-		p.projectListBox.SetCurSel(content.SelectedIndex)
-	}
-}
 
-func (p *projectViewPanelGroup) HandleCommand(id int, notifyCode int) {
-	switch id {
-	case p.saveBtn.ID:
-		p.saveProject()
-	case p.openReqBtn.ID:
-		p.openSelectedRequest()
-	case p.deleteReqBtn.ID:
-		p.deleteSelectedRequest()
-	case p.projectListBox.ID:
-		// Open request on double-click
-		if notifyCode == win32.LBN_DBLCLK {
-			p.openSelectedRequest()
+		// Clear the listbox
+		p.projectListBox.ResetContent()
+
+		// Add all requests
+		for _, req := range content.BoundProject.Requests {
+			displayText := req.Method + " " + filepath.Base(req.URL)
+			p.projectListBox.AddString(displayText)
 		}
+		// Restore listbox selection
+		if content.SelectedIndex >= 0 {
+			p.projectListBox.SetCurSel(content.SelectedIndex)
+		}
+
+		// Set timeout value
+		timeout := content.BoundProject.Settings.TimeoutInMs
+		if timeout == 0 {
+			timeout = 30000 // Default 30 seconds
+		}
+		p.timeoutInput.SetText(fmt.Sprintf("%d", timeout))
 	}
 }
 
 // saveProject saves the current project to file
-func (p *projectViewPanelGroup) saveProject() {
+func (p *projectViewPanelGroup) saveProject(mainWindow *win32.Window) {
 
 	defaultName := p.content.BoundProject.Name + ".rtp"
-	filePath, ok := p.projectWindow.SaveFileDialog(
+	filePath, ok := mainWindow.SaveFileDialog(
 		"Save Project",
 		"REST Project Files (*.rtp)|*.rtp|All Files (*.*)|*.*|",
 		"rtp",
@@ -297,7 +302,7 @@ func (p *projectViewPanelGroup) saveProject() {
 	}
 
 	if err := p.content.BoundProject.Save(filePath); err != nil {
-		p.projectWindow.MessageBox(fmt.Sprintf("Error saving project: %v", err), "Error")
+		mainWindow.MessageBox(fmt.Sprintf("Error saving project: %v", err), "Error")
 		return
 	}
 
@@ -311,7 +316,7 @@ func (p *projectViewPanelGroup) saveProject() {
 }
 
 // openSelectedRequest opens the selected request from project list in a new tab
-func (p *projectViewPanelGroup) openSelectedRequest() {
+func (p *projectViewPanelGroup) openSelectedRequest(projectWindow *ProjectWindow) {
 	idx := p.projectListBox.GetCurSel()
 	if idx < 0 || idx >= len(p.content.BoundProject.Requests) {
 		return
@@ -320,7 +325,7 @@ func (p *projectViewPanelGroup) openSelectedRequest() {
 	req := p.content.BoundProject.Requests[idx]
 
 	// Open in new tab bound to the request
-	p.projectWindow.CreateRequestTab(req)
+	projectWindow.createRequestTab(req)
 }
 
 // deleteSelectedRequest removes the selected request from project
@@ -336,27 +341,33 @@ func (p *projectViewPanelGroup) deleteSelectedRequest() {
 }
 
 func createProjectViewPanel(projectWindow *ProjectWindow) *projectViewPanelGroup {
-	mainWindow := projectWindow.mainWindow
-	y := layoutPadding * 4 // Below tab bar area
-	dy := layoutLabelHeight + layoutPadding
-	listWidth := int32(500)
-	listHeight := int32(500)
-	btnX := layoutPadding + listWidth + layoutPadding
-
-	panelGroup := &projectViewPanelGroup{
-		projectWindow:  projectWindow,
-		projectInfo:    mainWindow.CreateLabel("Double-click a request to open it in a new tab", layoutPadding, y, listWidth, layoutLabelHeight),
-		projectListBox: mainWindow.CreateListBox(layoutPadding, y+dy, listWidth, listHeight),
-		openReqBtn:     mainWindow.CreateButton("Open in Tab", btnX, y+dy, layoutButtonWidth, layoutInputHeight),
-		deleteReqBtn:   mainWindow.CreateButton("Delete", btnX, y+2*dy, layoutButtonWidth, layoutInputHeight),
-		saveBtn:        mainWindow.CreateButton("Save Project", btnX, y+3*dy, layoutButtonWidth, layoutInputHeight),
+	group := &projectViewPanelGroup{
+		projectInfo:  projectWindow.mainWindow.CreateLabel("Double-click a request to open it in a new tab"),
+		timeoutLabel: projectWindow.mainWindow.CreateLabel("Request Timeout (milliseconds):"),
+		timeoutInput: projectWindow.mainWindow.CreateInput(),
 	}
-
-	// Action buttons to the right of the list
-	return panelGroup
+	group.projectListBox = projectWindow.mainWindow.CreateListBox(func(lbc *win32.ListBoxControl) {
+		group.openSelectedRequest(projectWindow)
+	})
+	group.openReqBtn = projectWindow.mainWindow.CreateButton("Open in Tab", func() {
+		group.openSelectedRequest(projectWindow)
+	})
+	group.deleteReqBtn = projectWindow.mainWindow.CreateButton("Delete", func() {
+		group.deleteSelectedRequest()
+	})
+	group.saveBtn = projectWindow.mainWindow.CreateButton("Save Project", func() {
+		group.SaveState() // Save timeout before saving to file
+		group.saveProject(projectWindow.mainWindow)
+	})
+	group.ControllerGroup = win32.NewControllerGroup(
+		group.projectListBox, group.openReqBtn, group.deleteReqBtn,
+		group.projectInfo, group.saveBtn, group.timeoutLabel, group.timeoutInput,
+	)
+	return group
 }
 
 type settingsPanelGroup struct {
+	*win32.ControllerGroup
 	// Settings Panel controls
 	certInput       *win32.Control
 	keyInput        *win32.Control
@@ -371,107 +382,98 @@ type settingsPanelGroup struct {
 	settingsTitle   *win32.Control
 	saveSettingsBtn *win32.ButtonControl
 
-	projectWindow *ProjectWindow
-	content       *SettingsTabContent
-}
-
-func (s *settingsPanelGroup) Controller() []win32.Controller {
-	return []win32.Controller{
-		s.certInput, s.keyInput, s.caInput, s.skipVerifyChk,
-		s.certBtn, s.keyBtn, s.caBtn,
-		s.certLabel, s.keyLabel, s.caLabel, s.settingsTitle,
-		s.saveSettingsBtn,
-	}
+	content *SettingsTabContent
 }
 
 func (s *settingsPanelGroup) Resize(tabHeight, width, height int32) {
-	// Currently no dynamic resizing needed for settings panel
+	y := tabHeight
+
+	s.settingsTitle.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutLabelHeight+4)
+	y += layoutLabelHeight + layoutPadding
+
+	s.certLabel.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutLabelHeight)
+	y += layoutLabelHeight + layoutPadding
+	s.certInput.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutInputHeight)
+	s.certBtn.MoveWindow(layoutPadding+layoutColumnWidth+layoutPadding, y, layoutButtonWidth, layoutInputHeight)
+	y += layoutInputHeight + layoutPadding
+
+	s.keyLabel.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutLabelHeight)
+	y += layoutLabelHeight + layoutPadding
+	s.keyInput.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutInputHeight)
+	s.keyBtn.MoveWindow(layoutPadding+layoutColumnWidth+layoutPadding, y, layoutButtonWidth, layoutInputHeight)
+	y += layoutInputHeight + layoutPadding
+
+	s.caLabel.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutLabelHeight)
+	y += layoutLabelHeight + layoutPadding
+	s.caInput.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutInputHeight)
+	s.caBtn.MoveWindow(layoutPadding+layoutColumnWidth+layoutPadding, y, layoutButtonWidth, layoutInputHeight)
+	y += layoutInputHeight + layoutPadding
+
+	s.skipVerifyChk.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutInputHeight)
+	y += layoutInputHeight + layoutPadding
+	s.saveSettingsBtn.MoveWindow(layoutPadding, y, layoutButtonWidth, layoutInputHeight)
 }
 
 func (s *settingsPanelGroup) SaveState() {
-	s.content.Certificate.CertFile = s.certInput.GetText()
-	s.content.Certificate.KeyFile = s.keyInput.GetText()
-	s.content.Certificate.CACertFile = s.caInput.GetText()
-	s.content.Certificate.SkipVerify = s.skipVerifyChk.IsChecked()
+	s.content.Settings.Certificate.CertFile = s.certInput.GetText()
+	s.content.Settings.Certificate.KeyFile = s.keyInput.GetText()
+	s.content.Settings.Certificate.CACertFile = s.caInput.GetText()
+	s.content.Settings.Certificate.SkipVerify = s.skipVerifyChk.IsChecked()
 }
 
 func (s *settingsPanelGroup) SetState(data any) {
-	content, ok := data.(*SettingsTabContent)
-	if !ok {
-		return
+	if content, ok := data.(*SettingsTabContent); ok {
+		s.content = content
+		s.certInput.SetText(content.Settings.Certificate.CertFile)
+		s.keyInput.SetText(content.Settings.Certificate.KeyFile)
+		s.caInput.SetText(content.Settings.Certificate.CACertFile)
+		s.skipVerifyChk.SetChecked(content.Settings.Certificate.SkipVerify)
 	}
-	if content == nil {
-		return
-	}
-	s.content = content
-	s.certInput.SetText(content.Certificate.CertFile)
-	s.keyInput.SetText(content.Certificate.KeyFile)
-	s.caInput.SetText(content.Certificate.CACertFile)
-	s.skipVerifyChk.SetChecked(content.Certificate.SkipVerify)
-}
-
-func (s *settingsPanelGroup) HandleCommand(id int, notifyCode int) {
-	switch id {
-	case s.certBtn.ID:
-		if path, ok := s.projectWindow.OpenFileDialog("Select Certificate", "PEM Files (*.pem;*.crt)|*.pem;*.crt|All Files (*.*)|*.*|", "pem"); ok {
-			s.certInput.SetText(path)
-		}
-	case s.keyBtn.ID:
-		if path, ok := s.projectWindow.OpenFileDialog("Select Private Key", "PEM Files (*.pem;*.key)|*.pem;*.key|All Files (*.*)|*.*|", "pem"); ok {
-			s.keyInput.SetText(path)
-		}
-	case s.caBtn.ID:
-		if path, ok := s.projectWindow.OpenFileDialog("Select CA Bundle", "PEM Files (*.pem;*.crt)|*.pem;*.crt|All Files (*.*)|*.*|", "pem"); ok {
-			s.caInput.SetText(path)
-		}
-	case s.saveSettingsBtn.ID:
-		s.saveCertificateConfig()
-	}
-}
-
-// saveCertificateConfig saves the certificate settings from UI to project
-func (s *settingsPanelGroup) saveCertificateConfig() {
-	s.SaveState()
-	s.projectWindow.settings.save()
 }
 
 func createSettingsPanel(projectWindow *ProjectWindow) *settingsPanelGroup {
-	mainWindow := projectWindow.mainWindow
-	y := layoutPadding * 4 // Below tab bar area
-	inputWidth := int32(400)
-	browseBtnWidth := int32(30)
+	group := &settingsPanelGroup{
+		settingsTitle: projectWindow.mainWindow.CreateLabel("Global Settings"),
+		certLabel:     projectWindow.mainWindow.CreateLabel("Client Certificate (PEM)"),
+		certInput:     projectWindow.mainWindow.CreateInput(),
+		keyLabel:      projectWindow.mainWindow.CreateLabel("Private Key (PEM)"),
+		keyInput:      projectWindow.mainWindow.CreateInput(),
+		caLabel:       projectWindow.mainWindow.CreateLabel("CA Bundle (optional)"),
+		caInput:       projectWindow.mainWindow.CreateInput(),
+		skipVerifyChk: projectWindow.mainWindow.CreateCheckbox("Skip TLS Verification (insecure)"),
+	}
+	group.certBtn = projectWindow.mainWindow.CreateButton("...", func() {
+		if path, ok := projectWindow.mainWindow.OpenFileDialog("Select Certificate", "PEM Files (*.pem;*.crt)|*.pem;*.crt|All Files (*.*)|*.*|", "pem"); ok {
+			group.certInput.SetText(path)
+		}
 
-	settingsPanel := &settingsPanelGroup{}
-	settingsPanel.projectWindow = projectWindow
-	settingsPanel.settingsTitle = mainWindow.CreateLabel("Global Settings", layoutPadding, y, 200, layoutLabelHeight+4)
-	y += layoutLabelHeight + layoutPadding
+	})
+	group.keyBtn = projectWindow.mainWindow.CreateButton("...", func() {
+		if path, ok := projectWindow.mainWindow.OpenFileDialog("Select Private Key", "PEM Files (*.pem;*.key)|*.pem;*.key|All Files (*.*)|*.*|", "pem"); ok {
+			group.keyInput.SetText(path)
+		}
 
-	settingsPanel.certLabel = mainWindow.CreateLabel("Client Certificate (PEM)", layoutPadding, y, 200, layoutLabelHeight)
-	y += layoutLabelHeight + layoutPadding
-	settingsPanel.certInput = mainWindow.CreateInput(layoutPadding, y, inputWidth, layoutInputHeight)
-	settingsPanel.certBtn = mainWindow.CreateButton("...", layoutPadding+inputWidth+layoutPadding, y, browseBtnWidth, layoutInputHeight)
-	y += layoutInputHeight + layoutPadding
-
-	settingsPanel.keyLabel = mainWindow.CreateLabel("Private Key (PEM)", layoutPadding, y, 200, layoutLabelHeight)
-	y += layoutLabelHeight + layoutPadding
-	settingsPanel.keyInput = mainWindow.CreateInput(layoutPadding, y, inputWidth, layoutInputHeight)
-	settingsPanel.keyBtn = mainWindow.CreateButton("...", layoutPadding+inputWidth+layoutPadding, y, browseBtnWidth, layoutInputHeight)
-	y += layoutInputHeight + layoutPadding
-
-	settingsPanel.caLabel = mainWindow.CreateLabel("CA Bundle (optional)", layoutPadding, y, 200, layoutLabelHeight)
-	y += layoutLabelHeight + layoutPadding
-	settingsPanel.caInput = mainWindow.CreateInput(layoutPadding, y, inputWidth, layoutInputHeight)
-	settingsPanel.caBtn = mainWindow.CreateButton("...", layoutPadding+inputWidth+layoutPadding, y, browseBtnWidth, layoutInputHeight)
-	y += layoutInputHeight + layoutPadding
-
-	settingsPanel.skipVerifyChk = mainWindow.CreateCheckbox("Skip TLS Verification (insecure)", layoutPadding, y, 280, layoutInputHeight)
-	y += layoutInputHeight + layoutPadding
-	settingsPanel.saveSettingsBtn = mainWindow.CreateButton("Save Settings", layoutPadding, y, layoutButtonWidth, layoutInputHeight)
-
-	return settingsPanel
+	})
+	group.caBtn = projectWindow.mainWindow.CreateButton("...", func() {
+		if path, ok := projectWindow.mainWindow.OpenFileDialog("Select CA Bundle", "PEM Files (*.pem;*.crt)|*.pem;*.crt|All Files (*.*)|*.*|", "pem"); ok {
+			group.caInput.SetText(path)
+		}
+	})
+	group.saveSettingsBtn = projectWindow.mainWindow.CreateButton("Save Settings", func() {
+		group.SaveState()
+		group.content.Settings.save()
+	})
+	group.ControllerGroup = win32.NewControllerGroup(
+		group.certInput, group.keyInput, group.caInput,
+		group.skipVerifyChk, group.certBtn, group.keyBtn, group.caBtn,
+		group.settingsTitle, group.certLabel, group.keyLabel, group.caLabel,
+		group.saveSettingsBtn,
+	)
+	return group
 }
 
 type welcomePanelGroup struct {
+	*win32.ControllerGroup
 	// Welcome Panel controls
 	newTabTitle   *win32.Control
 	newTabNewBtn  *win32.ButtonControl
@@ -479,19 +481,22 @@ type welcomePanelGroup struct {
 	recentLabel   *win32.Control
 	recentListBox *win32.ListBoxControl
 
-	projectWindow *ProjectWindow
-	content       *WelcomeTabContent
-}
-
-func (w *welcomePanelGroup) Controller() []win32.Controller {
-	return []win32.Controller{
-		w.newTabTitle, w.newTabNewBtn, w.newTabOpenBtn,
-		w.recentLabel, w.recentListBox,
-	}
+	content *WelcomeTabContent
 }
 
 func (w *welcomePanelGroup) Resize(tabHeight, width, height int32) {
-	// Currently no dynamic resizing needed for welcome panel
+	y := tabHeight
+
+	w.newTabTitle.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutLabelHeight)
+	y += layoutLabelHeight + layoutPadding
+
+	w.newTabNewBtn.MoveWindow(layoutPadding, y, layoutButtonWidth, layoutIconInputHeight)
+	w.newTabOpenBtn.MoveWindow(layoutPadding+layoutButtonWidth, y, layoutButtonWidth, layoutIconInputHeight)
+	y += layoutIconInputHeight + layoutPadding
+
+	w.recentLabel.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutLabelHeight)
+	y += layoutLabelHeight + layoutPadding
+	w.recentListBox.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutListHeight)
 }
 
 func (w *welcomePanelGroup) SaveState() {
@@ -500,101 +505,32 @@ func (w *welcomePanelGroup) SaveState() {
 }
 
 func (w *welcomePanelGroup) SetState(data any) {
-	content, ok := data.(*WelcomeTabContent)
-	if !ok {
-		return
-	}
-	w.content = content
-	w.recentListBox.ResetContent()
-	for _, path := range content.RecentProjects {
-		// Display only the filename, not the full path
-		displayName := path
-		if idx := strings.LastIndex(path, "\\"); idx >= 0 {
-			displayName = path[idx+1:]
-		}
-		w.recentListBox.AddString(displayName)
-	}
-}
-
-func (w *welcomePanelGroup) HandleCommand(id int, notifyCode int) {
-	switch id {
-	case w.newTabNewBtn.ID:
-		w.projectWindow.newProject()
-	case w.newTabOpenBtn.ID:
-		w.projectWindow.openProject()
-	case w.recentListBox.ID:
-		// Only open on double-click, not selection change
-		if notifyCode == win32.LBN_DBLCLK {
-			idx := w.recentListBox.GetCurSel()
-			if idx < 0 || idx >= len(w.projectWindow.settings.RecentProjects) {
-				return
-			}
-			w.projectWindow.openProjectFromPath(w.projectWindow.settings.RecentProjects[idx])
+	if content, ok := data.(*WelcomeTabContent); ok {
+		w.content = content
+		w.recentListBox.ResetContent()
+		for _, path := range content.RecentProjects {
+			w.recentListBox.AddString(filepath.Base(path))
 		}
 	}
 }
 
 func createWelcomePanel(projectWindow *ProjectWindow) *welcomePanelGroup {
-	mainWindow := projectWindow.mainWindow
-	y := layoutPadding * 6 // More space at top for welcome area
-	recentListWidth := int32(400)
-	recentListHeight := int32(300)
-
-	newTabTitle := mainWindow.CreateLabel("REST Tester - Start", layoutPadding, y, 400, layoutLabelHeight)
-	y += layoutLabelHeight + layoutPadding
-
-	newTabNewBtn := mainWindow.CreateButton("📄 New Project", layoutPadding, y, layoutButtonWidth, layoutIconInputHeight)
-	newTabOpenBtn := mainWindow.CreateButton("📂 Open Project", layoutPadding+layoutButtonWidth, y, layoutButtonWidth, layoutIconInputHeight)
-	y += layoutIconInputHeight + layoutPadding
-
-	recentLabel := mainWindow.CreateLabel("Recent Projects:", layoutPadding, y, 200, layoutLabelHeight)
-	y += layoutLabelHeight + layoutPadding
-	recentListBox := mainWindow.CreateListBox(layoutPadding, y, recentListWidth, recentListHeight)
-
-	return &welcomePanelGroup{
-		projectWindow: projectWindow,
-		newTabTitle:   newTabTitle,
-		newTabNewBtn:  newTabNewBtn,
-		newTabOpenBtn: newTabOpenBtn,
-		recentLabel:   recentLabel,
-		recentListBox: recentListBox,
-	}
-}
-
-// initPanels initializes the panel groups (call after creating controls)
-func initPanels(projectWindow *ProjectWindow) Panels {
-	panels := make(Panels)
-	panels[PanelRequest] = createRequestPanel(projectWindow)
-	panels[PanelProjectView] = createProjectViewPanel(projectWindow)
-	panels[PanelSettings] = createSettingsPanel(projectWindow)
-	panels[PanelWelcome] = createWelcomePanel(projectWindow)
-	for _, pg := range panels {
-		pg.Resize(projectWindow.mainWindow.TabManager.GetHeight(), projectWindow.mainWindow.GetWidth(), projectWindow.mainWindow.GetHeight())
-	}
-	return panels
-}
-
-// show shows the request editing panel
-func (p Panels) show(panel PanelGroupName) {
-	for name, pg := range p {
-		if name == panel {
-			for _, ctrl := range pg.Controller() {
-				ctrl.Show()
+	group := &welcomePanelGroup{
+		newTabTitle:   projectWindow.mainWindow.CreateLabel("REST Tester - Start"),
+		newTabNewBtn:  projectWindow.mainWindow.CreateButton("📄 New Project", func() { projectWindow.newProject() }),
+		newTabOpenBtn: projectWindow.mainWindow.CreateButton("📂 Open Project", func() { projectWindow.openProject() }),
+		recentLabel:   projectWindow.mainWindow.CreateLabel("Recent Projects:"),
+		recentListBox: projectWindow.mainWindow.CreateListBox(func(list *win32.ListBoxControl) {
+			idx := list.GetCurSel()
+			if idx < 0 || idx >= len(projectWindow.settings.RecentProjects) {
+				return
 			}
-		} else {
-			for _, ctrl := range pg.Controller() {
-				ctrl.Hide()
-			}
-		}
+			projectWindow.openProjectFromPath(projectWindow.settings.RecentProjects[idx])
+		}),
 	}
-}
-
-func (p Panels) get(panel PanelGroupName) PanelGroup {
-	return p[panel]
-}
-
-func (p Panels) handleCommand(id int, notifyCode int) {
-	for _, pg := range p {
-		pg.HandleCommand(id, notifyCode)
-	}
+	group.ControllerGroup = win32.NewControllerGroup(
+		group.newTabTitle, group.newTabNewBtn, group.newTabOpenBtn,
+		group.recentLabel, group.recentListBox,
+	)
+	return group
 }

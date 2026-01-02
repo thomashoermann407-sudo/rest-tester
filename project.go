@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -14,12 +15,17 @@ type CertificateConfig struct {
 	SkipVerify bool   `json:"skipVerify"` // Skip TLS certificate verification
 }
 
+type ProjectSettings struct {
+	TimeoutInMs int64 `json:"timeoutInMs"` // Request timeout in milliseconds
+}
+
 // Project represents a collection of saved requests
 type Project struct {
-	Name     string     `json:"name"`
-	Version  string     `json:"version"`
-	Requests []*Request `json:"requests"`
-	filePath string     // Not saved, tracks where project is stored
+	Name     string          `json:"name"`
+	Version  string          `json:"version"`
+	Requests []*Request      `json:"requests"`
+	Settings ProjectSettings `json:"settings"`
+	filePath string          // Not saved, tracks where project is stored
 }
 
 // NewProject creates a new empty project
@@ -28,12 +34,20 @@ func NewProject(name string) *Project {
 		Name:     name,
 		Version:  "1.0",
 		Requests: make([]*Request, 0),
+		Settings: ProjectSettings{
+			TimeoutInMs: 30000, // Default 30 seconds
+		},
 	}
 }
 
-// AddRequest adds a new request to the project
-func (p *Project) AddRequest(req *Request) {
+// NewRequest adds a new request to the project
+func (p *Project) NewRequest() *Request {
+	// Create a new request
+	req := NewRequest(fmt.Sprintf("Request %d", len(p.Requests)+1))
+	req.Headers["Content-Type"] = "application/json"
+	req.Headers["Accept"] = "application/json"
 	p.Requests = append(p.Requests, req)
+	return req
 }
 
 // RemoveRequest removes a request by index

@@ -14,23 +14,35 @@ func nextID() int {
 }
 
 type Control struct {
-	Hwnd HWND
+	Hwnd hWnd
 }
 
 type Controller interface {
-	GetHwnd() HWND
 	Show()
 	Hide()
 }
 
-func (w *Window) CreateInput(x, y, width, height int32) *Control {
+type ClickControl struct {
+	Control
+	id            int
+	onClick       func()
+	onDoubleClick func()
+}
+
+type ClickController interface {
+	ID() int
+	OnClick()
+	OnDoubleClick()
+}
+
+func (w *Window) CreateInput() *Control {
 	hwnd := createWindowEx(
 		0,
 		StringToUTF16Ptr(WC_EDIT),
 		nil,
 		WS_CHILD|WS_BORDER|ES_LEFT|ES_AUTOHSCROLL,
-		x, y, width, height,
-		w.Hwnd,
+		0, 0, 0, 0,
+		w.hwnd,
 		0,
 		getModuleHandle(nil),
 		nil,
@@ -40,14 +52,14 @@ func (w *Window) CreateInput(x, y, width, height int32) *Control {
 }
 
 // CreateLabel creates a static text label
-func (w *Window) CreateLabel(text string, x, y, width, height int32) *Control {
+func (w *Window) CreateLabel(text string) *Control {
 	hwnd := createWindowEx(
 		0,
 		StringToUTF16Ptr(WC_STATIC),
 		StringToUTF16Ptr(text),
 		WS_CHILD|SS_LEFT,
-		x, y, width, height,
-		w.Hwnd,
+		0, 0, 0, 0,
+		w.hwnd,
 		0,
 		getModuleHandle(nil),
 		nil,
@@ -57,14 +69,14 @@ func (w *Window) CreateLabel(text string, x, y, width, height int32) *Control {
 }
 
 // CreateGroupBox creates a group box (frame with title)
-func (w *Window) CreateGroupBox(text string, x, y, width, height int32) *Control {
+func (w *Window) CreateGroupBox(text string) *Control {
 	hwnd := createWindowEx(
 		0,
 		StringToUTF16Ptr(WC_BUTTON),
 		StringToUTF16Ptr(text),
 		WS_CHILD|0x00000007, // BS_GROUPBOX
-		x, y, width, height,
-		w.Hwnd,
+		0, 0, 0, 0,
+		w.hwnd,
 		0,
 		getModuleHandle(nil),
 		nil,
@@ -74,7 +86,7 @@ func (w *Window) CreateGroupBox(text string, x, y, width, height int32) *Control
 }
 
 // CreateMultilineEdit creates a multi-line text area
-func (w *Window) CreateMultilineEdit(x, y, width, height int32, readonly bool) *Control {
+func (w *Window) CreateMultilineEdit(readonly bool) *Control {
 	style := uint32(WS_CHILD | WS_BORDER | WS_VSCROLL | WS_HSCROLL | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN)
 	if readonly {
 		style |= ES_READONLY
@@ -85,8 +97,8 @@ func (w *Window) CreateMultilineEdit(x, y, width, height int32, readonly bool) *
 		StringToUTF16Ptr(WC_EDIT),
 		nil,
 		style,
-		x, y, width, height,
-		w.Hwnd,
+		0, 0, 0, 0,
+		w.hwnd,
 		0,
 		getModuleHandle(nil),
 		nil,
@@ -96,7 +108,7 @@ func (w *Window) CreateMultilineEdit(x, y, width, height int32, readonly bool) *
 }
 
 // CreateCodeEdit creates a multi-line text area with monospace font for code/JSON
-func (w *Window) CreateCodeEdit(x, y, width, height int32, readonly bool) *Control {
+func (w *Window) CreateCodeEdit(readonly bool) *Control {
 	style := uint32(WS_CHILD | WS_BORDER | WS_VSCROLL | WS_HSCROLL | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN)
 	if readonly {
 		style |= ES_READONLY
@@ -107,8 +119,8 @@ func (w *Window) CreateCodeEdit(x, y, width, height int32, readonly bool) *Contr
 		StringToUTF16Ptr(WC_EDIT),
 		nil,
 		style,
-		x, y, width, height,
-		w.Hwnd,
+		0, 0, 0, 0,
+		w.hwnd,
 		0,
 		getModuleHandle(nil),
 		nil,
@@ -120,10 +132,6 @@ func (w *Window) CreateCodeEdit(x, y, width, height int32, readonly bool) *Contr
 	// Enable modern visual styles
 	setWindowTheme(hwnd, "", "")
 	return &Control{Hwnd: hwnd}
-}
-
-func (control *Control) GetHwnd() HWND {
-	return control.Hwnd
 }
 
 func (control *Control) Show() {
@@ -149,58 +157,66 @@ func (control *Control) SetText(text string) bool {
 	return ret != 0
 }
 
-func (control *Control) MoveWindow(x, y, width, height int32, repaint bool) bool {
-	var repaintVal uintptr
-	if repaint {
-		repaintVal = 1
-	}
-	ret, _, _ := procMoveWindow.Call(uintptr(control.Hwnd), uintptr(x), uintptr(y), uintptr(width), uintptr(height), repaintVal)
+func (control *Control) MoveWindow(x, y, width, height int32) bool {
+	ret, _, _ := procMoveWindow.Call(uintptr(control.Hwnd), uintptr(x), uintptr(y), uintptr(width), uintptr(height), 1)
 	return ret != 0
 }
 
-type ButtonControl struct {
-	Control
-	ID      int
-	OnClick func() // TODO
+func (cc *ClickControl) ID() int {
+	return cc.id
+}
+func (cc *ClickControl) OnClick() {
+	if cc.onClick != nil {
+		cc.onClick()
+	}
+}
+func (cc *ClickControl) OnDoubleClick() {
+	if cc.onDoubleClick != nil {
+		cc.onDoubleClick()
+	}
 }
 
-func (w *Window) CreateButton(text string, x, y, width, height int32) *ButtonControl {
+type ButtonControl struct {
+	ClickControl
+}
+
+func (w *Window) CreateButton(text string, onClick func()) *ButtonControl {
 	id := nextID()
 	hwnd := createWindowEx(
 		0,
 		StringToUTF16Ptr(WC_BUTTON),
 		StringToUTF16Ptr(text),
 		WS_CHILD|BS_PUSHBUTTON,
-		x, y, width, height,
-		w.Hwnd,
-		HMENU(uintptr(id)),
+		0, 0, 0, 0,
+		w.hwnd,
+		hMenu(uintptr(id)),
 		getModuleHandle(nil),
 		nil,
 	)
 	w.applyFont(hwnd)
-	return &ButtonControl{Control: Control{Hwnd: hwnd}, ID: id}
+	return &ButtonControl{ClickControl: ClickControl{Control: Control{Hwnd: hwnd}, id: id, onClick: onClick}}
+}
+
+type CheckBoxControl struct {
+	ClickControl
 }
 
 // CreateComboBox creates a dropdown combo box
-func (w *Window) CreateComboBox(x, y, width, height int32) *ComboBoxControl {
+func (w *Window) CreateComboBox() *ComboBoxControl {
 	id := nextID()
 	hwnd := createWindowEx(
 		0,
 		StringToUTF16Ptr(WC_COMBOBOX),
 		nil,
 		WS_CHILD|CBS_DROPDOWNLIST|CBS_HASSTRINGS,
-		x, y, width, height,
-		w.Hwnd,
-		HMENU(uintptr(id)),
+		0, 0, 0, 0,
+		w.hwnd,
+		hMenu(uintptr(id)),
 		getModuleHandle(nil),
 		nil,
 	)
 	w.applyFont(hwnd)
-	return &ComboBoxControl{Control: Control{Hwnd: hwnd}}
-}
-
-type CheckBoxControl struct {
-	Control
+	return &ComboBoxControl{ClickControl: ClickControl{Control: Control{Hwnd: hwnd}, id: id}}
 }
 
 // Checkbox helper functions
@@ -225,44 +241,26 @@ func (c *CheckBoxControl) SetChecked(checked bool) {
 	sendMessage(c.Hwnd, BM_SETCHECK, val, 0)
 }
 
+type ComboBoxControl struct {
+	ClickControl
+}
+
 // CreateCheckbox creates a checkbox control
-func (w *Window) CreateCheckbox(text string, x, y, width, height int32) *CheckBoxControl {
+func (w *Window) CreateCheckbox(text string) *CheckBoxControl {
 	id := nextID()
 	hwnd := createWindowEx(
 		0,
 		StringToUTF16Ptr(WC_BUTTON),
 		StringToUTF16Ptr(text),
 		WS_CHILD|0x00000003, // BS_AUTOCHECKBOX
-		x, y, width, height,
-		w.Hwnd,
-		HMENU(uintptr(id)),
+		0, 0, 0, 0,
+		w.hwnd,
+		hMenu(uintptr(id)),
 		getModuleHandle(nil),
 		nil,
 	)
 	w.applyFont(hwnd)
-	return &CheckBoxControl{Control: Control{Hwnd: hwnd}}
-}
-
-// CreateListBox creates a listbox control
-func (w *Window) CreateListBox(x, y, width, height int32) *ListBoxControl {
-	id := nextID()
-	hwnd := createWindowEx(
-		WS_EX_CLIENTEDGE,
-		StringToUTF16Ptr(WC_LISTBOX),
-		nil,
-		WS_CHILD|WS_VSCROLL|LBS_NOTIFY|LBS_HASSTRINGS|LBS_NOINTEGRALHEIGHT,
-		x, y, width, height,
-		w.Hwnd,
-		HMENU(uintptr(id)),
-		getModuleHandle(nil),
-		nil,
-	)
-	w.applyFont(hwnd)
-	return &ListBoxControl{Control: Control{Hwnd: hwnd}, ID: id}
-}
-
-type ComboBoxControl struct {
-	Control
+	return &CheckBoxControl{ClickControl: ClickControl{Control: Control{Hwnd: hwnd}, id: id}}
 }
 
 // ComboBox helper functions
@@ -296,8 +294,32 @@ func (c *ComboBoxControl) GetText() string {
 }
 
 type ListBoxControl struct {
-	Control
-	ID int
+	ClickControl
+	onDoubleClick func(*ListBoxControl)
+}
+
+// CreateListBox creates a listbox control
+func (w *Window) CreateListBox(onDoubleClick func(*ListBoxControl)) *ListBoxControl {
+	id := nextID()
+	hwnd := createWindowEx(
+		WS_EX_CLIENTEDGE,
+		StringToUTF16Ptr(WC_LISTBOX),
+		nil,
+		WS_CHILD|WS_VSCROLL|LBS_NOTIFY|LBS_HASSTRINGS|LBS_NOINTEGRALHEIGHT,
+		0, 0, 0, 0,
+		w.hwnd,
+		hMenu(uintptr(id)),
+		getModuleHandle(nil),
+		nil,
+	)
+	w.applyFont(hwnd)
+	return &ListBoxControl{ClickControl: ClickControl{Control: Control{Hwnd: hwnd}, id: id}, onDoubleClick: onDoubleClick}
+}
+
+func (l *ListBoxControl) OnDoubleClick() {
+	if l.onDoubleClick != nil {
+		l.onDoubleClick(l)
+	}
 }
 
 // ListBox helper functions

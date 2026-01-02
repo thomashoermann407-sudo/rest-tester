@@ -6,28 +6,10 @@ import (
 	"hoermi.com/rest-test/win32"
 )
 
-// Layout constants for consistent UI spacing
-const (
-	// Common spacing
-	layoutPadding = int32(12)
-
-	// Standard control heights
-	layoutLabelHeight     = int32(20)
-	layoutInputHeight     = int32(26)
-	layoutIconInputHeight = int32(32)
-	layoutButtonWidth     = int32(120)
-
-	// Default window size
-	defaultWindowWidth  = int32(1100)
-	defaultWindowHeight = int32(850)
-)
-
 // ProjectWindow holds all UI state for the main application window
 type ProjectWindow struct {
 	mainWindow *win32.Window
-	tabs       *win32.TabManager[TabContent]
-
-	panels Panels
+	tabs       *win32.TabManager[any]
 
 	// Current loaded project
 	currentProject *Project
@@ -36,50 +18,53 @@ type ProjectWindow struct {
 }
 
 func NewProjectWindow() *ProjectWindow {
-	mainWindow := win32.NewWindow("REST Tester", defaultWindowWidth, defaultWindowHeight)
-	tabs := win32.NewTabManager[TabContent](mainWindow.Hwnd)
+	mainWindow := win32.NewWindow("REST Tester", 1100, 850)
+	tabs := win32.NewTabManager[any](mainWindow)
 	mainWindow.TabManager = tabs
 	pw := &ProjectWindow{
 		mainWindow: mainWindow,
 		tabs:       tabs,
 	}
+	panels := tabs.GetPanels()
+	panels.Add(PanelRequest, createRequestPanel(pw))
+	panels.Add(PanelProjectView, createProjectViewPanel(pw))
+	panels.Add(PanelSettings, createSettingsPanel(pw))
+	panels.Add(PanelWelcome, createWelcomePanel(pw))
 	return pw
-}
-
-// handleResize is called when the window is resized
-func (pw *ProjectWindow) handleResize(width, height int32) {
-	if pw.tabs != nil {
-		pw.panels.get(PanelRequest).Resize(pw.tabs.GetHeight(), width, height)
-	}
 }
 
 // showContextMenu displays the main context menu
 func (pw *ProjectWindow) showContextMenu() {
-	menu := win32.CreatePopupMenu()
+	menu := pw.mainWindow.CreatePopupMenu()
 	if menu == nil {
 		return
 	}
 	defer menu.Destroy()
 
-	menu.AddItem(MENU_PROJECT, "📁 Project View")
-	menu.AddItem(MENU_NEW_REQUEST, "➕ New Request")
+	menuProject := 1001
+	menuNewRequest := 1002
+	menuSettings := 1003
+	menuAbout := 1004
+
+	menu.AddItem(menuProject, "📁 Project View")
+	menu.AddItem(menuNewRequest, "➕ New Request")
 	menu.AddSeparator()
-	menu.AddItem(MENU_SETTINGS, "⚙ Settings")
+	menu.AddItem(menuSettings, "⚙ Settings")
 	menu.AddSeparator()
-	menu.AddItem(MENU_ABOUT, "About REST Tester")
+	menu.AddItem(menuAbout, "About REST Tester")
 
 	// Show menu at cursor position (since menu button is in tab bar)
-	selected := menu.Show(pw.mainWindow.Hwnd)
+	selected := menu.Show()
 
 	switch selected {
-	case MENU_SETTINGS:
-		pw.CreateSettingsTab()
-	case MENU_PROJECT:
-		pw.CreateProjectViewTab()
-	case MENU_NEW_REQUEST:
+	case menuProject:
+		pw.createProjectViewTab()
+	case menuNewRequest:
 		pw.addNewRequestTab()
-	case MENU_ABOUT:
-		pw.MessageBox("REST Tester v1.0\nA modern REST API testing tool", "About")
+	case menuSettings:
+		pw.createSettingsTab()
+	case menuAbout:
+		pw.mainWindow.MessageBox("REST Tester v1.0\nA modern REST API testing tool", "About")
 	}
 }
 
@@ -87,53 +72,25 @@ func (pw *ProjectWindow) showContextMenu() {
 func (pw *ProjectWindow) addNewRequestTab() {
 	// First ensure we have a project
 	if pw.currentProject == nil {
-		pw.currentProject = NewProject("Untitled Project")
+		return
 	}
 
-	// Create a new request
-	req := NewRequest(fmt.Sprintf("Request %d", len(pw.currentProject.Requests)+1))
-	req.Headers["Content-Type"] = "application/json"
-	req.Headers["Accept"] = "application/json"
-	pw.currentProject.AddRequest(req)
+	req := pw.currentProject.NewRequest()
 
 	// Create tab bound to the request
-	pw.CreateRequestTab(req)
+	pw.createRequestTab(req)
 }
 
 // newProject creates a new empty project
 func (pw *ProjectWindow) newProject() {
 	pw.currentProject = NewProject("Untitled Project")
 	// Open the project view tab
-	pw.CreateProjectViewTab()
-}
-
-func (pw *ProjectWindow) MessageBox(title, message string) {
-	win32.MessageBox(pw.mainWindow.Hwnd, message, title, win32.MB_OK)
-}
-
-func (pw *ProjectWindow) SaveFileDialog(title, filter, defaultExt, defaultName string) (string, bool) {
-	return win32.SaveFileDialog(
-		pw.mainWindow.Hwnd,
-		title,
-		filter,
-		defaultExt,
-		defaultName,
-	)
-}
-
-// OpenFileDialog shows a file open dialog and returns the selected file path
-func (pw *ProjectWindow) OpenFileDialog(title, filter, defaultExt string) (string, bool) {
-	return win32.OpenFileDialog(
-		pw.mainWindow.Hwnd,
-		title,
-		filter,
-		defaultExt,
-	)
+	pw.createProjectViewTab()
 }
 
 // openProject opens a project from file dialog
 func (pw *ProjectWindow) openProject() {
-	filePath, ok := pw.OpenFileDialog(
+	filePath, ok := pw.mainWindow.OpenFileDialog(
 		"Open Project",
 		"REST Project Files (*.rtp)|*.rtp|All Files (*.*)|*.*|",
 		"rtp",
@@ -148,7 +105,7 @@ func (pw *ProjectWindow) openProject() {
 func (pw *ProjectWindow) openProjectFromPath(filePath string) {
 	project, err := LoadProject(filePath)
 	if err != nil {
-		pw.MessageBox(fmt.Sprintf("Error loading project: %v", err), "Error")
+		pw.mainWindow.MessageBox(fmt.Sprintf("Error loading project: %v", err), "Error")
 		return
 	}
 
@@ -158,108 +115,66 @@ func (pw *ProjectWindow) openProjectFromPath(filePath string) {
 	pw.currentProject = project
 
 	// Open the project view tab
-	pw.CreateProjectViewTab()
+	pw.createProjectViewTab()
 }
 
-// CreateRequestTab creates a new request tab bound to a Request object
-func (pw *ProjectWindow) CreateRequestTab(req *Request) {
-	// Build headers string from map
-	var headersText string
-	for name, value := range req.Headers {
-		if headersText != "" {
-			headersText += "\r\n"
-		}
-		headersText += name + ": " + value
-	}
-
-	// Build query params string from map
-	var queryText string
-	for name, value := range req.QueryParams {
-		if queryText != "" {
-			queryText += "\r\n"
-		}
-		queryText += name + "=" + value
-	}
-
+// createRequestTab creates a new request tab bound to a Request object
+func (pw *ProjectWindow) createRequestTab(req *Request) {
 	content := &RequestTabContent{
-		BoundRequest: req, // Direct binding to the Request object
+		BoundRequest: req,
+		BoundProject: pw.currentProject,
 		Settings:     pw.settings,
 		Status:       "Ready",
 	}
 	name := req.Method + " " + req.Name
-	pw.tabs.AddTab(name, content)
+	pw.tabs.AddTab(name, content, PanelRequest)
 }
 
-// CreateProjectViewTab creates the project structure view tab
-func (pw *ProjectWindow) CreateProjectViewTab() {
+// createProjectViewTab creates the project structure view tab
+// If a project view tab already exists, it will be focused instead
+func (pw *ProjectWindow) createProjectViewTab() {
+	// Check if a project view tab already exists
+	if existingTabIndex, ok := pw.tabs.FindTabByPanelGroup(PanelProjectView); ok {
+		// Tab exists, just focus it and update its data
+		tab := pw.tabs.SetActiveTab(existingTabIndex)
+		// Update the bound project in case it changed
+		if content, ok := tab.Data.(*ProjectViewTabContent); ok {
+			content.BoundProject = pw.currentProject
+			content.SelectedIndex = -1
+		}
+		return
+	}
+
+	// Create new tab
 	content := &ProjectViewTabContent{
 		BoundProject:  pw.currentProject, // Bind to current project
 		SelectedIndex: -1,
 	}
-	pw.tabs.AddTab("📁 Project", content)
-	pw.panels.get(PanelProjectView).SetState(content)
-	pw.panels.show(PanelProjectView)
+	pw.tabs.AddTab("📁 Project", content, PanelProjectView)
 }
 
-// CreateSettingsTab creates the global settings tab
-func (pw *ProjectWindow) CreateSettingsTab() {
-	content := &SettingsTabContent{
-		Certificate: pw.settings.Certificate,
+// createSettingsTab creates the global settings tab
+// If a settings tab already exists, it will be focused instead
+func (pw *ProjectWindow) createSettingsTab() {
+	// Check if a settings tab already exists
+	if existingTabIndex, ok := pw.tabs.FindTabByPanelGroup(PanelSettings); ok {
+		// Tab exists, just focus it
+		pw.tabs.SetActiveTab(existingTabIndex)
+		return
 	}
-	pw.tabs.AddTab("⚙ Settings", content)
-	pw.panels.get(PanelSettings).SetState(content)
-	pw.panels.show(PanelSettings)
+
+	// Create new tab
+	content := &SettingsTabContent{
+		Settings: pw.settings,
+	}
+	pw.tabs.AddTab("⚙ Settings", content, PanelSettings)
 }
 
-// CreateWelcomeTab creates the "New Tab" start tab
-func (pw *ProjectWindow) CreateWelcomeTab() {
+// createWelcomeTab creates the "New Tab" start tab
+func (pw *ProjectWindow) createWelcomeTab() {
 	content := &WelcomeTabContent{
 		RecentProjects:      pw.settings.RecentProjects,
 		SelectedRecentIndex: -1,
 	}
-	pw.tabs.AddTab("Welcome", content)
-	pw.panels.get(PanelWelcome).SetState(content)
-	pw.panels.show(PanelWelcome)
-}
-
-// SaveCurrentTabState saves the current UI state to the active tab's TabContent
-func (pw *ProjectWindow) SaveCurrentTabState() {
-	activeTab := pw.tabs.GetActiveTab()
-	if activeTab == nil || activeTab.Data == nil {
-		return
-	}
-
-	// Save state based on tab type using type assertion
-	switch activeTab.Data.(type) {
-	case *RequestTabContent:
-		pw.panels.get(PanelRequest).SaveState()
-	case *ProjectViewTabContent:
-		pw.panels.get(PanelProjectView).SaveState()
-	case *SettingsTabContent:
-		pw.panels.get(PanelSettings).SaveState()
-	case *WelcomeTabContent:
-		pw.panels.get(PanelWelcome).SaveState()
-	}
-}
-
-// RestoreTabState restores UI state from a tab's saved content
-func (pw *ProjectWindow) RestoreTabState(content TabContent) { //TODO: Move to TabManager?
-	if content == nil {
-		return
-	}
-
-	switch c := content.(type) {
-	case *RequestTabContent:
-		pw.panels.show(PanelRequest)
-		pw.panels.get(PanelRequest).SetState(c)
-	case *ProjectViewTabContent:
-		pw.panels.show(PanelProjectView)
-		pw.panels.get(PanelProjectView).SetState(c)
-	case *SettingsTabContent:
-		pw.panels.show(PanelSettings)
-		pw.panels.get(PanelSettings).SetState(c)
-	case *WelcomeTabContent:
-		pw.panels.show(PanelWelcome)
-		pw.panels.get(PanelWelcome).SetState(c)
-	}
+	pw.tabs.AddTab("Welcome", content, PanelWelcome)
 }

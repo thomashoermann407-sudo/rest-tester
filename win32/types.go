@@ -2,18 +2,17 @@ package win32
 
 import "syscall"
 
-type HANDLE uintptr
-type HWND HANDLE
-type HINSTANCE HANDLE
-type HICON HANDLE
-type HCURSOR HANDLE
-type HBRUSH HANDLE
-type HMENU HANDLE
-type HDC HANDLE
-type HFONT HANDLE
-type HPEN HANDLE
-type HGDIOBJ HANDLE
-type COLORREF uint32
+type handle uintptr
+type hWnd handle
+type hInstance handle
+type hIcon handle
+type hCursor handle
+type hBrush handle
+type hMenu handle
+type hDc handle
+type hFont handle
+type hPen handle
+type colorRef uint32
 
 const (
 	CS_HREDRAW = 0x0002
@@ -49,6 +48,11 @@ const (
 	WM_LBUTTONDOWN   = 0x0201
 	WM_LBUTTONUP     = 0x0202
 	WM_MOUSELEAVE    = 0x02A3
+	WM_USER          = 0x0400
+	WM_APP           = 0x8000
+
+	// Custom application messages
+	WM_UI_CALLBACK = WM_APP + 1
 
 	// Non-client hit test values
 	HTCLIENT      = 1
@@ -186,6 +190,9 @@ const (
 	// ListBox notifications
 	LBN_SELCHANGE = 1
 	LBN_DBLCLK    = 2
+
+	// Button notifications
+	BN_CLICKED = 0
 )
 
 // ComCtl32 Common Control Class Names
@@ -214,52 +221,56 @@ const (
 	WC_LINK            = "SysLink"
 )
 
-type WNDCLASSEX struct {
+type wndClassEx struct {
 	Size       uint32
 	Style      uint32
 	WndProc    uintptr
 	ClsExtra   int32
 	WndExtra   int32
-	Instance   HINSTANCE
-	Icon       HICON
-	Cursor     HCURSOR
-	Background HBRUSH
+	Instance   hInstance
+	Icon       hIcon
+	Cursor     hCursor
+	Background hBrush
 	MenuName   *uint16
 	ClassName  *uint16
-	IconSm     HICON
+	IconSm     hIcon
 }
 
-type POINT struct {
+type point struct {
 	X, Y int32
 }
 
-type MSG struct {
-	Hwnd    HWND
+type msg struct {
+	Hwnd    hWnd
 	Message uint32
 	WParam  uintptr
 	LParam  uintptr
 	Time    uint32
-	Pt      POINT
+	Pt      point
 }
 
-type RECT struct {
+type rect struct {
 	Left, Top, Right, Bottom int32
 }
 
-type PAINTSTRUCT struct {
-	Hdc         HDC
+func (r *rect) inside(x, y int32) bool {
+	return x >= r.Left && x < r.Right && y >= r.Top && y < r.Bottom
+}
+
+type paintStruct struct {
+	Hdc         hDc
 	Erase       int32
-	RcPaint     RECT
+	RcPaint     rect
 	Restore     int32
 	IncUpdate   int32
 	RgbReserved [32]byte
 }
 
-// OPENFILENAME structure for file dialogs
-type OPENFILENAME struct {
+// openFilename structure for file dialogs
+type openFilename struct {
 	StructSize      uint32
-	Owner           HWND
-	Instance        HINSTANCE
+	Owner           hWnd
+	Instance        hInstance
 	Filter          *uint16
 	CustomFilter    *uint16
 	MaxCustomFilter uint32
@@ -290,20 +301,6 @@ const (
 	OFN_NOCHANGEDIR     = 0x00000008
 	OFN_EXPLORER        = 0x00080000
 )
-
-// NCCALCSIZE_PARAMS for custom title bar
-type NCCALCSIZE_PARAMS struct {
-	Rgrc  [3]RECT
-	Lppos uintptr // WINDOWPOS*
-}
-
-// MARGINS for DWM
-type MARGINS struct {
-	CxLeftWidth    int32
-	CxRightWidth   int32
-	CyTopHeight    int32
-	CyBottomHeight int32
-}
 
 // Helper to convert string to *uint16
 func StringToUTF16Ptr(s string) *uint16 {

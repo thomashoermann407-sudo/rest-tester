@@ -3,27 +3,34 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 )
 
-const (
-	settingsFile = "settings.json"
-)
 
 type Settings struct {
-	RecentProjects []string           `json:"recentProjects"`
-	Certificate    *CertificateConfig `json:"certificate,omitempty"`
+	RecentProjects []string          `json:"recentProjects"`
+	Certificate    CertificateConfig `json:"certificate"`
 }
 
-func InitSettings() *Settings {
+func settingsFilePath() string {
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		return "settings.json"
+	}
+	appConfigDir := filepath.Join(configDir, "resttester")
+	os.MkdirAll(appConfigDir, 0755)
+	return filepath.Join(appConfigDir, "settings.json")
+}
+func InitSettings() (*Settings, error) {
 	var settings Settings
 	// Load settings from file if exists
-	if data, err := os.ReadFile(settingsFile); err == nil {
+	if data, err := os.ReadFile(settingsFilePath()); err == nil {
 		err := json.Unmarshal(data, &settings)
 		if err != nil {
-			println("Error loading settings:", err.Error())
+			return nil, err
 		}
 	}
-	return &settings
+	return &settings, nil
 }
 
 // addRecentProject adds a path to the recent projects list
@@ -49,6 +56,7 @@ func (settings *Settings) save() {
 	// Save to file
 	data, err := json.MarshalIndent(settings, "", "  ")
 	if err == nil {
-		os.WriteFile(settingsFile, data, 0644)
+		os.MkdirAll(filepath.Dir(settingsFilePath()), 0755)
+		os.WriteFile(settingsFilePath(), data, 0644)
 	}
 }

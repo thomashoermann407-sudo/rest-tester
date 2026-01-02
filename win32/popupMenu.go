@@ -14,16 +14,17 @@ const (
 
 // PopupMenu represents a popup context menu
 type PopupMenu struct {
-	handle HANDLE
+	handle handle
+	hwnd   hWnd
 }
 
 // CreatePopupMenu creates a new popup menu
-func CreatePopupMenu() *PopupMenu {
+func (w *Window) CreatePopupMenu() *PopupMenu {
 	ret, _, _ := procCreatePopupMenu.Call()
 	if ret == 0 {
 		return nil
 	}
-	return &PopupMenu{handle: HANDLE(ret)}
+	return &PopupMenu{handle: handle(ret), hwnd: w.hwnd}
 }
 
 // AddItem adds a menu item
@@ -47,8 +48,8 @@ func (m *PopupMenu) AddSeparator() {
 }
 
 // Show displays the menu at cursor position and returns selected item ID (0 if cancelled)
-func (m *PopupMenu) Show(hwnd HWND) int {
-	var pt POINT
+func (m *PopupMenu) Show() int {
+	var pt point
 	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
 
 	ret, _, _ := procTrackPopupMenu.Call(
@@ -57,14 +58,14 @@ func (m *PopupMenu) Show(hwnd HWND) int {
 		uintptr(pt.X),
 		uintptr(pt.Y),
 		0,
-		uintptr(hwnd),
+		uintptr(m.hwnd),
 		0,
 	)
 	return int(ret)
 }
 
 // ShowAt displays the menu at specified position
-func (m *PopupMenu) ShowAt(hwnd HWND, x, y int32) int {
+func (m *PopupMenu) ShowAt(hwnd hWnd, x, y int32) int {
 	ret, _, _ := procTrackPopupMenu.Call(
 		uintptr(m.handle),
 		TPM_LEFTALIGN|TPM_TOPALIGN|TPM_RETURNCMD|TPM_RIGHTBUTTON,

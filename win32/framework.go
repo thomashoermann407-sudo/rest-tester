@@ -5,104 +5,64 @@ import (
 	"unsafe"
 )
 
-var (
-	handlers   = make(map[HWND]func(msg uint32, wParam, lParam uintptr) (uintptr, bool))
-	registered = false
-	comCtlInit = false
-)
-
-func wndProc(hwnd HWND, msg uintptr, wParam, lParam uintptr) uintptr {
-	if handler, ok := handlers[hwnd]; ok {
-		ret, handled := handler(uint32(msg), wParam, lParam)
-		if handled {
-			return ret
-		}
-	}
-
-	switch uint32(msg) {
-	case WM_DESTROY:
-		postQuitMessage(0)
-		return 0
-	case WM_CLOSE:
-		postQuitMessage(0)
-		return 0
-	default:
-		return defWindowProc(hwnd, uint32(msg), wParam, lParam)
-	}
-}
-
 type TabDrawer interface {
-	Paint(hdc HDC, width int32)
+	Paint(hdc hDc, width int32)
 	HandleMouseMove(x, y, width int32)
-	HandleClick(x, y, width int32) bool
-	HandleMouseLeave()
+	HandleClick(x, y, width int32)
 	Invalidate()
 	GetHeight() int32
+	Destroy()
 }
 
 type Window struct {
-	Hwnd        HWND
+	hwnd        hWnd
+	handlers    map[hWnd]func(msg uint32, wParam, lParam uintptr) (uintptr, bool)
 	OnCommand   func(id int, notifyCode int)
 	OnResize    func(width, height int32)
 	OnMouseMove func(x, y int32) bool // Returns true if handled
 	OnMouseDown func(x, y int32) bool // Returns true if handled
 	OnMouseUp   func(x, y int32) bool // Returns true if handled
+	OnDestroy   func()                // Called when window is being destroyed
 	TabManager  TabDrawer
 	width       int32
 	height      int32
-	font        HFONT
-	monoFont    HFONT
+	font        hFont
+	monoFont    hFont
+
+	// UI callback queue for thread-safe UI updates
+	uiCallbacks    map[uintptr]func()
+	nextCallbackID uintptr
 }
 
 func NewWindow(title string, width, height int32) *Window {
-	// Initialize ALL common controls once with modern visual styles
-	if !comCtlInit {
-		// Initialize all control classes for full ComCtl32 support
-		initCommonControls(
-			ICC_WIN95_CLASSES |
-				ICC_STANDARD_CLASSES |
-				ICC_BAR_CLASSES |
-				ICC_TAB_CLASSES |
-				ICC_UPDOWN_CLASS |
-				ICC_PROGRESS_CLASS |
-				ICC_HOTKEY_CLASS |
-				ICC_ANIMATE_CLASS |
-				ICC_DATE_CLASSES |
-				ICC_USEREX_CLASSES |
-				ICC_COOL_CLASSES |
-				ICC_INTERNET_CLASSES |
-				ICC_PAGESCROLLER_CLASS |
-				ICC_NATIVEFNTCTL_CLASS |
-				ICC_LINK_CLASS |
-				ICC_LISTVIEW_CLASSES |
-				ICC_TREEVIEW_CLASSES,
-		)
-		comCtlInit = true
-	}
-
 	hInstance := getModuleHandle(nil)
 	className := StringToUTF16Ptr("MyWindowClass")
 
-	if !registered {
-		// Load the application icon from resources
-		appIcon := loadIcon(hInstance, uintptr(1)) // Resource ID 1 matches app.rc
-
-		wcx := WNDCLASSEX{
-			Size:       uint32(unsafe.Sizeof(WNDCLASSEX{})),
-			Style:      CS_HREDRAW | CS_VREDRAW,
-			WndProc:    syscall.NewCallback(wndProc),
-			Instance:   hInstance,
-			Background: HBRUSH(COLOR_BTNFACE + 1),
-			ClassName:  className,
-			Cursor:     loadCursor(0, uintptr(IDC_ARROW)),
-			Icon:       appIcon, // Large icon (32x32)
-			IconSm:     appIcon, // Small icon (16x16) - using same icon, Windows will resize
-		}
-		registerClassEx(&wcx)
-		registered = true
+	w := &Window{
+		handlers:       make(map[hWnd]func(msg uint32, wParam, lParam uintptr) (uintptr, bool)),
+		width:          width,
+		height:         height,
+		uiCallbacks:    make(map[uintptr]func()),
+		nextCallbackID: 1,
 	}
 
-	hwnd := createWindowEx(
+	// Load the application icon from resources
+	appIcon := loadIcon(hInstance, uintptr(1)) // Resource ID 1 matches app.rc
+
+	wcx := wndClassEx{
+		Size:       uint32(unsafe.Sizeof(wndClassEx{})),
+		Style:      CS_HREDRAW | CS_VREDRAW,
+		WndProc:    syscall.NewCallback(w.wndProc),
+		Instance:   hInstance,
+		Background: hBrush(COLOR_BTNFACE + 1),
+		ClassName:  className,
+		Cursor:     loadCursor(0, uintptr(IDC_ARROW)),
+		Icon:       appIcon, // Large icon (32x32)
+		IconSm:     appIcon, // Small icon (16x16) - using same icon, Windows will resize
+	}
+	registerClassEx(&wcx)
+
+	w.hwnd = createWindowEx(
 		0,
 		className,
 		StringToUTF16Ptr(title),
@@ -116,12 +76,6 @@ func NewWindow(title string, width, height int32) *Window {
 		hInstance,
 		nil,
 	)
-
-	w := &Window{
-		Hwnd:   hwnd,
-		width:  width,
-		height: height,
-	}
 
 	// Create modern Segoe UI font
 	w.font = createFont(
@@ -142,8 +96,17 @@ func NewWindow(title string, width, height int32) *Window {
 	)
 
 	// Register handler for this window
-	handlers[hwnd] = func(msg uint32, wParam, lParam uintptr) (uintptr, bool) {
+	w.handlers[w.hwnd] = func(msg uint32, wParam, lParam uintptr) (uintptr, bool) {
 		switch msg {
+		case WM_UI_CALLBACK:
+			// Handle UI callback from background thread
+			callbackID := wParam
+			if callback, ok := w.uiCallbacks[callbackID]; ok {
+				callback()
+				delete(w.uiCallbacks, callbackID)
+			}
+			return 0, true
+
 		case WM_COMMAND:
 			if w.OnCommand != nil {
 				id := int(wParam & 0xFFFF)
@@ -166,10 +129,10 @@ func NewWindow(title string, width, height int32) *Window {
 
 		case WM_PAINT:
 			if w.TabManager != nil {
-				var ps PAINTSTRUCT
-				hdc := beginPaint(hwnd, &ps)
+				var ps paintStruct
+				hdc := beginPaint(w.hwnd, &ps)
 				w.TabManager.Paint(hdc, w.width)
-				endPaint(hwnd, &ps)
+				endPaint(w.hwnd, &ps)
 				return 0, true
 			}
 
@@ -194,7 +157,8 @@ func NewWindow(title string, width, height int32) *Window {
 
 			// Let tab manager handle it first (for tab bar area)
 			if w.TabManager != nil {
-				if w.TabManager.HandleClick(x, y, w.width) {
+				if y < w.TabManager.GetHeight() {
+					w.TabManager.HandleClick(x, y, w.width)
 					return 0, true
 				}
 			}
@@ -217,8 +181,18 @@ func NewWindow(title string, width, height int32) *Window {
 
 		case WM_MOUSELEAVE:
 			if w.TabManager != nil {
-				w.TabManager.HandleMouseLeave()
+				w.TabManager.Invalidate()
 			}
+			return 0, false
+
+		case WM_DESTROY:
+			// Call the destroy callback to allow cleanup
+			if w.OnDestroy != nil {
+				w.OnDestroy()
+			}
+			w.TabManager.Destroy()
+			w.Destroy()
+			// Let the default handler process WM_DESTROY
 			return 0, false
 		}
 
@@ -228,19 +202,19 @@ func NewWindow(title string, width, height int32) *Window {
 	return w
 }
 
-func MessageBox(hwnd HWND, text, caption string, type_ uint32) int32 {
+func (w *Window) MessageBox(text, caption string) int32 {
 	ret, _, _ := procMessageBoxW.Call(
-		uintptr(hwnd),
+		uintptr(w.hwnd),
 		uintptr(unsafe.Pointer(StringToUTF16Ptr(text))),
 		uintptr(unsafe.Pointer(StringToUTF16Ptr(caption))),
-		uintptr(type_),
+		uintptr(MB_OK),
 	)
 	return int32(ret)
 }
 
 // OpenFileDialog shows a file open dialog and returns the selected file path
-func OpenFileDialog(owner HWND, title, filter, defaultExt string) (string, bool) {
-	var ofn OPENFILENAME
+func (w *Window) OpenFileDialog(title, filter, defaultExt string) (string, bool) {
+	var ofn openFilename
 	fileNameBuf := make([]uint16, 260)
 
 	// Convert filter string: "Description\0*.ext\0\0"
@@ -254,7 +228,7 @@ func OpenFileDialog(owner HWND, title, filter, defaultExt string) (string, bool)
 	}
 
 	ofn.StructSize = uint32(unsafe.Sizeof(ofn))
-	ofn.Owner = owner
+	ofn.Owner = w.hwnd
 	ofn.Filter = &filterBuf[0]
 	ofn.File = &fileNameBuf[0]
 	ofn.MaxFile = uint32(len(fileNameBuf))
@@ -271,8 +245,8 @@ func OpenFileDialog(owner HWND, title, filter, defaultExt string) (string, bool)
 }
 
 // SaveFileDialog shows a file save dialog and returns the selected file path
-func SaveFileDialog(owner HWND, title, filter, defaultExt, defaultName string) (string, bool) {
-	var ofn OPENFILENAME
+func (w *Window) SaveFileDialog(title, filter, defaultExt, defaultName string) (string, bool) {
+	var ofn openFilename
 	fileNameBuf := make([]uint16, 260)
 
 	// Copy default name to buffer
@@ -292,7 +266,7 @@ func SaveFileDialog(owner HWND, title, filter, defaultExt, defaultName string) (
 	}
 
 	ofn.StructSize = uint32(unsafe.Sizeof(ofn))
-	ofn.Owner = owner
+	ofn.Owner = w.hwnd
 	ofn.Filter = &filterBuf[0]
 	ofn.File = &fileNameBuf[0]
 	ofn.MaxFile = uint32(len(fileNameBuf))
@@ -309,10 +283,36 @@ func SaveFileDialog(owner HWND, title, filter, defaultExt, defaultName string) (
 }
 
 func (w *Window) Run() {
-	var msg MSG
+	var msg msg
 	for getMessage(&msg, 0, 0, 0) > 0 {
 		translateMessage(&msg)
 		dispatchMessage(&msg)
+	}
+}
+
+// Destroy cleans up all OS resources (fonts, window handle, etc.)
+// This should be called before the application exits to prevent resource leaks
+func (w *Window) Destroy() {
+	// Delete GDI font objects
+	if w.font != 0 {
+		deleteObject(handle(w.font))
+		w.font = 0
+	}
+
+	if w.monoFont != 0 {
+		deleteObject(handle(w.monoFont))
+		w.monoFont = 0
+	}
+
+	// Remove the window's message handler
+	if w.hwnd != 0 {
+		delete(w.handlers, w.hwnd)
+	}
+
+	// Destroy the window handle (this also destroys all child controls)
+	if w.hwnd != 0 {
+		destroyWindow(w.hwnd)
+		w.hwnd = 0
 	}
 }
 
@@ -323,11 +323,40 @@ func (w *Window) GetHeight() int32 {
 	return w.height
 }
 
+func (w *Window) wndProc(hwnd hWnd, msg uintptr, wParam, lParam uintptr) uintptr {
+	if handler, ok := w.handlers[hwnd]; ok {
+		ret, handled := handler(uint32(msg), wParam, lParam)
+		if handled {
+			return ret
+		}
+	}
+
+	switch uint32(msg) {
+	case WM_DESTROY:
+		postQuitMessage(0)
+		return 0
+	case WM_CLOSE:
+		postQuitMessage(0)
+		return 0
+	default:
+		return defWindowProc(hwnd, uint32(msg), wParam, lParam)
+	}
+}
+
 // applyFont applies the modern font to a control and enables visual styles
-func (w *Window) applyFont(hwnd HWND) {
+func (w *Window) applyFont(hwnd hWnd) {
 	if w.font != 0 {
 		sendMessage(hwnd, WM_SETFONT, uintptr(w.font), 1)
 	}
 	// Enable modern visual styles for the control
 	setWindowTheme(hwnd, "", "")
+}
+
+// PostUICallback posts a callback function to be executed on the UI thread
+// This is thread-safe and should be used when updating UI from background goroutines
+func (w *Window) PostUICallback(callback func()) {
+	callbackID := w.nextCallbackID
+	w.nextCallbackID++
+	w.uiCallbacks[callbackID] = callback
+	postMessage(w.hwnd, WM_UI_CALLBACK, callbackID, 0)
 }
