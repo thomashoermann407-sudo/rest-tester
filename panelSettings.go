@@ -102,7 +102,7 @@ func createSettingsPanel(factory win32.ControlFactory) *settingsPanelGroup {
 	group.saveSettingsBtn = factory.CreateButton("Save Settings", func() {
 		group.SaveState()
 		if err := group.content.Settings.save(); err != nil {
-			factory.MessageBox(fmt.Sprintf("Error saving settings: %v", err), "Error")
+			factory.MessageBox("Error", fmt.Sprintf("Error saving settings: %v", err))
 		}
 	})
 	group.ControllerGroup = win32.NewControllerGroup(

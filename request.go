@@ -50,36 +50,35 @@ type Request struct {
 	Name        string `json:"name"`
 	Method      string `json:"method"`
 	Host        string `json:"host"`
-	Path        string `json:"path"`
 	Headers     Params `json:"headers"`
 	QueryParams Params `json:"queryParams"`
 	Body        string `json:"body"`
 }
 
 // NewRequest creates a new request with default values
-func NewRequest(name string) *Request {
+func (project *Project) NewRequest() *Request {
 	return &Request{
-		Name:        name,
+		Name:        "Request",
+		Host:        project.getDefaultHost(),
 		Method:      "GET",
-		Path:        "/",
-		Headers:     make(map[string]string),
+		Headers:     map[string]string{"Content-Type": "application/json", "Accept": "application/json"},
 		QueryParams: make(map[string]string),
 		Body:        "",
 	}
 }
 
-func (request *Request) sendRequest(settings *Settings, timeoutInMs int64, callback func(responseData *ResponseData, err error)) {
+func (request *Request) sendRequest(settings *Settings, path string, timeoutInMs int64, callback func(responseData *ResponseData, err error)) {
 	startTime := time.Now()
 
 	var requestUrl string
 	if len(request.QueryParams) == 0 {
-		requestUrl = request.Host + request.Path
+		requestUrl = request.Host + path
 	} else {
 		v := url.Values{}
 		for key, value := range request.QueryParams {
 			v.Set(key, value)
 		}
-		requestUrl = request.Host + request.Path + "?" + v.Encode()
+		requestUrl = request.Host + path + "?" + v.Encode()
 	}
 	// Create request
 	var reqBody io.Reader

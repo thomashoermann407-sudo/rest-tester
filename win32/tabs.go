@@ -40,7 +40,7 @@ type TabManager[T any] struct {
 	cornerRadius   int32
 	menuBtnSize    int32
 
-	// Colors (Windows 11 style - Mica-like)
+	// Colors
 	tabBgColor      colorRef
 	tabActiveColor  colorRef
 	tabHoverColor   colorRef
@@ -87,7 +87,6 @@ func NewTabManager[T any](window *Window) *TabManager[T] {
 		cornerRadius:   8,
 		menuBtnSize:    38,
 
-		// Windows 11 Mica-inspired colors (light theme)
 		tabBgColor:      rgb(243, 243, 243),
 		tabActiveColor:  rgb(255, 255, 255),
 		tabHoverColor:   rgb(235, 235, 235),

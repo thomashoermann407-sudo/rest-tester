@@ -16,9 +16,7 @@ func settingsFilePath() string {
 	if err != nil {
 		return "settings.json"
 	}
-	appConfigDir := filepath.Join(configDir, "resttester")
-	os.MkdirAll(appConfigDir, 0755)
-	return filepath.Join(appConfigDir, "settings.json")
+	return filepath.Join(configDir, "resttester", "settings.json")
 }
 func InitSettings() (*Settings, error) {
 	var settings Settings
@@ -57,8 +55,9 @@ func (settings *Settings) save() error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(settingsFilePath()), 0755); err != nil {
+	settingsFile := settingsFilePath()
+	if err := os.MkdirAll(filepath.Dir(settingsFile), 0755); err != nil {
 		return err
 	}
-	return os.WriteFile(settingsFilePath(), data, 0644)
+	return os.WriteFile(settingsFile, data, 0644)
 }

@@ -125,9 +125,23 @@ func NewWindow(title string, width, height int32) *Window {
 			// The unsafeptr analyzer warning is a false positive in this context.
 			nmhdr := (*NMHDR)(unsafe.Pointer(lParam))
 			if ctrl, ok := w.controls[int(nmhdr.IdFrom)]; ok {
-				//TODO: Harmozing: HandleCommand in panels.go needs to be updated to support more controls
+				//TODO: Harmonize: HandleCommand in panels.go needs to be updated to support more controls
 				switch nmhdr.Code {
 				case NM_DBLCLK:
+					// Handle double-click for ListView in-place editing
+					if listView, ok := ctrl.(*ListViewControl); ok {
+						// Get cursor position
+						var pt point
+						procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+						// Convert to client coordinates
+						procScreenToClient.Call(uintptr(listView.Hwnd), uintptr(unsafe.Pointer(&pt)))
+						// Hit test to find the cell
+						row, col := listView.HitTestEx(pt.X, pt.Y)
+						if row >= 0 && col >= 0 {
+							listView.StartEdit(row, col)
+							return 0, true
+						}
+					}
 					ctrl.OnDoubleClick()
 					return 0, true
 				case NM_RCLICK:
@@ -147,6 +161,12 @@ func NewWindow(title string, width, height int32) *Window {
 					// Handle tab selection change for TabControl
 					if tabControl, ok := ctrl.(*TabControlControl); ok {
 						tabControl.OnSelChange()
+						return 0, true
+					}
+				case LVN_ITEMCHANGED:
+					// Handle selection change for ListView
+					if listView, ok := ctrl.(*ListViewControl); ok {
+						listView.OnSelChange()
 						return 0, true
 					}
 				}
@@ -240,12 +260,22 @@ func NewWindow(title string, width, height int32) *Window {
 	return w
 }
 
-func (w *Window) MessageBox(text, caption string) int32 {
+func (w *Window) MessageBox(caption, text string) int32 {
 	ret, _, _ := procMessageBoxW.Call(
 		uintptr(w.hwnd),
 		uintptr(unsafe.Pointer(StringToUTF16Ptr(text))),
 		uintptr(unsafe.Pointer(StringToUTF16Ptr(caption))),
 		uintptr(MB_OK),
+	)
+	return int32(ret)
+}
+
+func (w *Window) MessageBoxYesNo(caption, text string) int32 {
+	ret, _, _ := procMessageBoxW.Call(
+		uintptr(w.hwnd),
+		uintptr(unsafe.Pointer(StringToUTF16Ptr(text))),
+		uintptr(unsafe.Pointer(StringToUTF16Ptr(caption))),
+		uintptr(MB_YESNO),
 	)
 	return int32(ret)
 }
@@ -320,7 +350,7 @@ func (w *Window) SaveFileDialog(title, filter, defaultExt, defaultName string) (
 	return syscall.UTF16ToString(fileNameBuf), true
 }
 
-func (w *Window) Run() {
+func Run() {
 	var msg msg
 	for getMessage(&msg, 0, 0, 0) > 0 {
 		translateMessage(&msg)

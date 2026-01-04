@@ -2,18 +2,23 @@ package main
 
 import (
 	"fmt"
-	"strings"
 
 	"hoermi.com/rest-test/win32"
 )
 
 type projectViewPanelGroup struct {
 	*win32.ControllerGroup
+	// Environment ListView controls
+	envLabel      *win32.Control
+	envListView   *win32.ListViewControl
+	addEnvBtn     *win32.ButtonControl
+	deleteEnvBtn  *win32.ButtonControl
+	setDefaultBtn *win32.ButtonControl
+
 	// Project View Panel controls
 	projectTreeView *win32.TreeViewControl
 	openReqBtn      *win32.ButtonControl
 	deleteReqBtn    *win32.ButtonControl
-	addHostBtn      *win32.ButtonControl
 	addPathBtn      *win32.ButtonControl
 	addMethodBtn    *win32.ButtonControl
 	projectInfo     *win32.Control
@@ -21,15 +26,15 @@ type projectViewPanelGroup struct {
 	timeoutLabel    *win32.Control
 	timeoutInput    *win32.Control
 
-	content    *ProjectViewTabContent
-	tabManager TabManager
+	content        *ProjectViewTabContent
+	tabManager     TabManager
+	controlFactory win32.ControlFactory
 }
 
 // Menu IDs for context menu
 const (
-	menuIDAddHost = iota + 1000
-	menuIDAddPath
-	menuIDAddMethod
+	menuIDAddPath = iota + 1000
+	menuIDAddRequest
 	menuIDDelete
 	menuIDEdit
 )
@@ -38,16 +43,33 @@ func (p *projectViewPanelGroup) Resize(tabHeight, width, height int32) {
 	y := tabHeight + layoutPadding
 	dy := layoutLabelHeight + layoutPadding
 	btnX := layoutPadding + layoutColumnWidth + layoutPadding
+
+	// Environment ListView section
+	p.envLabel.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutLabelHeight)
+	y += layoutLabelHeight + layoutPadding/2
+	envListHeight := int32(100) // Height for environment list
+	p.envListView.MoveWindow(layoutPadding, y, layoutColumnWidth, envListHeight)
+
+	// Environment buttons next to ListView
+	btnY := y
+	p.addEnvBtn.MoveWindow(btnX, btnY, layoutButtonWidth, layoutInputHeight)
+	btnY += dy
+	p.deleteEnvBtn.MoveWindow(btnX, btnY, layoutButtonWidth, layoutInputHeight)
+	btnY += dy
+	p.setDefaultBtn.MoveWindow(btnX, btnY, layoutButtonWidth, layoutInputHeight)
+
+	// Move to next section
+	y += envListHeight + layoutPadding
+
+	// Project tree section
 	p.projectInfo.MoveWindow(layoutPadding, y, layoutColumnWidth, layoutLabelHeight)
 	p.projectTreeView.MoveWindow(layoutPadding, y+dy, layoutColumnWidth, layoutListHeight)
 
 	// Right side buttons
-	btnY := y + dy
+	btnY = y + dy
 	p.openReqBtn.MoveWindow(btnX, btnY, layoutButtonWidth, layoutInputHeight)
 	btnY += dy
 	p.deleteReqBtn.MoveWindow(btnX, btnY, layoutButtonWidth, layoutInputHeight)
-	btnY += dy
-	p.addHostBtn.MoveWindow(btnX, btnY, layoutButtonWidth, layoutInputHeight)
 	btnY += dy
 	p.addPathBtn.MoveWindow(btnX, btnY, layoutButtonWidth, layoutInputHeight)
 	btnY += dy
@@ -74,74 +96,181 @@ func (p *projectViewPanelGroup) SaveState() {
 	}
 }
 
+// populateEnvironmentList fills the ListView with environments
+func (p *projectViewPanelGroup) populateEnvironmentList() {
+	if p.envListView == nil || p.content == nil || p.content.BoundProject == nil {
+		return
+	}
+
+	p.envListView.DeleteAllItems()
+
+	defaultIdx := p.content.BoundProject.Settings.DefaultEnvironmentIdx
+	for i, env := range p.content.BoundProject.Environments {
+		name := env.Name
+		if name == "" {
+			name = "(Unnamed)"
+		}
+
+		// Add default marker
+		defaultMarker := ""
+		if i == defaultIdx {
+			defaultMarker = "*"
+		}
+
+		p.envListView.InsertItem(i, defaultMarker, uintptr(i))
+		p.envListView.SetItemText(i, 1, name)
+		p.envListView.SetItemText(i, 2, env.BaseURL)
+	}
+}
+
+// getSelectedEnvironmentIndex returns the index of the selected environment
+func (p *projectViewPanelGroup) getSelectedEnvironmentIndex() int {
+	return p.envListView.GetSelectedIndex()
+}
+
+// addEnvironment adds a new environment and starts editing it
+func (p *projectViewPanelGroup) addEnvironment() {
+	if p.content == nil || p.content.BoundProject == nil {
+		return
+	}
+
+	// Create a new environment with default values
+	newEnv := Environment{
+		Name:    "",
+		BaseURL: "http://localhost:8080",
+	}
+
+	// Add to the project
+	p.content.BoundProject.Environments = append(p.content.BoundProject.Environments, newEnv)
+
+	// Refresh the list to show the new environment
+	p.populateEnvironmentList()
+
+	// Get the index of the newly added environment
+	newIndex := len(p.content.BoundProject.Environments) - 1
+
+	// Select the new item in the ListView
+	p.envListView.SetCurSel(newIndex)
+
+	// Start editing the name field (column 1) so user can immediately type
+	p.envListView.StartEdit(newIndex, 1)
+}
+
+// deleteEnvironment deletes the selected environment
+func (p *projectViewPanelGroup) deleteEnvironment() {
+	idx := p.getSelectedEnvironmentIndex()
+	if idx < 0 || idx >= len(p.content.BoundProject.Environments) {
+		p.controlFactory.MessageBox("Delete Environment", "Please select an environment to delete.")
+		return
+	}
+
+	// Confirm deletion
+	env := p.content.BoundProject.Environments[idx]
+	name := env.Name
+	if name == "" {
+		name = env.BaseURL
+	}
+	if p.controlFactory.MessageBoxYesNo("Delete Environment", fmt.Sprintf("Are you sure you want to delete the environment '%s'?", name)) != win32.ID_YES {
+		return
+	}
+
+	// Remove from slice
+	p.content.BoundProject.Environments = append(
+		p.content.BoundProject.Environments[:idx],
+		p.content.BoundProject.Environments[idx+1:]...)
+
+	// Adjust default environment index if needed
+	if p.content.BoundProject.Settings.DefaultEnvironmentIdx == idx {
+		p.content.BoundProject.Settings.DefaultEnvironmentIdx = -1
+	} else if p.content.BoundProject.Settings.DefaultEnvironmentIdx > idx {
+		p.content.BoundProject.Settings.DefaultEnvironmentIdx--
+	}
+
+	p.populateEnvironmentList()
+}
+
+// setDefaultEnvironment marks the selected environment as default
+func (p *projectViewPanelGroup) setDefaultEnvironment() {
+	idx := p.getSelectedEnvironmentIndex()
+	if idx < 0 || idx >= len(p.content.BoundProject.Environments) {
+		p.controlFactory.MessageBox("Set Default", "Please select an environment to set as default.")
+		return
+	}
+
+	p.content.BoundProject.Settings.DefaultEnvironmentIdx = idx
+	p.populateEnvironmentList()
+}
+
 // populateTreeNode recursively populates the tree view from a request node
-func (p *projectViewPanelGroup) populateTreeNode(parentHandle uintptr, node *RequestNode, pathPrefix string, isRoot bool) {
+func (p *projectViewPanelGroup) populateTreeNode(parentHandle uintptr, node *RequestNode, pathPrefix string) {
 	if node == nil {
 		return
 	}
 
 	// Build the current path
 	currentPath := pathPrefix
+	var segmentHandle uintptr
+
 	if node.Segment != "" {
-		if currentPath != "" {
+		// Non-root node: create a tree item for this segment
+		if currentPath != "" && currentPath != "/" {
 			currentPath += "/"
 		}
 		currentPath += node.Segment
 
-		// Determine node type
-		nodeType := NodeTypePath
-		if isRoot {
-			nodeType = NodeTypeHost
-		}
-
 		// Insert a node for this path segment
-		segmentHandle := p.projectTreeView.InsertItem(parentHandle, win32.TVI_LAST, node.Segment, 0)
+		segmentHandle = p.projectTreeView.InsertItem(parentHandle, win32.TVI_LAST, node.Segment, 0)
 
 		// Store node info
 		p.content.itemToNodeInfo[segmentHandle] = &TreeNodeInfo{
-			Type:     nodeType,
+			Type:     NodeTypePath,
 			Segment:  node.Segment,
 			FullPath: currentPath,
 		}
-
-		// Add request items for each HTTP method at this node
-		for method, req := range node.Requests {
-			displayText := fmt.Sprintf("[%s]", method)
-			itemHandle := p.projectTreeView.InsertItem(segmentHandle, win32.TVI_LAST, displayText, 0)
-			// Map the tree item to the request with node info
-			p.content.itemToNodeInfo[itemHandle] = &TreeNodeInfo{
-				Type:     NodeTypeMethod,
-				Method:   method,
-				Request:  req,
-				FullPath: currentPath,
-			}
-		}
-
-		// Recursively add children
-		for _, child := range node.Children {
-			p.populateTreeNode(segmentHandle, child, currentPath, false)
-		}
 	} else {
-		// Root node - just process children (these are hosts)
-		for _, child := range node.Children {
-			p.populateTreeNode(parentHandle, child, currentPath, true)
+		// Root node: don't create a tree item, just use parent handle
+		segmentHandle = parentHandle
+	}
+
+	// Add request items for each HTTP method at this node
+	for _, req := range node.Requests {
+		displayText := fmt.Sprintf("[%s] %s", req.Method, req.Name)
+		itemHandle := p.projectTreeView.InsertItem(segmentHandle, win32.TVI_LAST, displayText, 0)
+		// Map the tree item to the request with node info
+		p.content.itemToNodeInfo[itemHandle] = &TreeNodeInfo{
+			Type:     NodeTypeRequest,
+			Method:   req.Method,
+			Request:  req,
+			FullPath: currentPath,
 		}
+	}
+
+	// Recursively add children
+	for _, child := range node.Children {
+		p.populateTreeNode(segmentHandle, child, currentPath)
 	}
 }
 
 func (p *projectViewPanelGroup) SetState(data any) {
+	if p.content == data {
+		// Prevent the current state of the tree from being cleared and rebuilt unnecessarily
+		return
+	}
 	if content, ok := data.(*ProjectViewTabContent); ok {
 		p.content = content
 		if p.projectTreeView == nil || content.BoundProject == nil {
 			return
 		}
 
+		// Populate the environment list
+		p.populateEnvironmentList()
+
 		// Clear the tree view
 		p.projectTreeView.DeleteAllItems()
 		p.content.itemToNodeInfo = make(map[uintptr]*TreeNodeInfo)
 
-		// Populate the tree from the root
-		p.populateTreeNode(win32.TVI_ROOT, content.BoundProject.Tree.Root, "", false)
+		// Populate the tree from the root (start with empty path for root node)
+		p.populateTreeNode(win32.TVI_ROOT, content.BoundProject.Tree, "")
 
 		// Set timeout value
 		timeout := content.BoundProject.Settings.TimeoutInMs
@@ -152,45 +281,17 @@ func (p *projectViewPanelGroup) SetState(data any) {
 	}
 }
 
-// saveProject saves the current project to file
-func (p *projectViewPanelGroup) saveProject(factory win32.ControlFactory) {
-
-	defaultName := p.content.BoundProject.Name + ".rtp"
-	filePath, ok := factory.SaveFileDialog(
-		"Save Project",
-		"REST Project Files (*.rtp)|*.rtp|All Files (*.*)|*.*|",
-		"rtp",
-		defaultName,
-	)
-	if !ok {
-		return
-	}
-
-	if err := p.content.BoundProject.Save(filePath); err != nil {
-		factory.MessageBox(fmt.Sprintf("Error saving project: %v", err), "Error")
-		return
-	}
-
-	// Update project name from filename
-	name := filePath
-	if idx := strings.LastIndex(name, "\\"); idx >= 0 {
-		name = name[idx+1:]
-	}
-	name = strings.TrimSuffix(name, ".rtp")
-	p.content.BoundProject.Name = name
-}
-
 // getSelectedRequest returns the request associated with the selected tree item
-func (p *projectViewPanelGroup) getSelectedRequest() *Request {
+func (p *projectViewPanelGroup) getSelectedRequest() (*Request, string) {
 	itemHandle := p.projectTreeView.GetSelection()
 	if itemHandle == 0 {
-		return nil
+		return nil, ""
 	}
 	nodeInfo := p.content.itemToNodeInfo[itemHandle]
-	if nodeInfo != nil && nodeInfo.Type == NodeTypeMethod {
-		return nodeInfo.Request
+	if nodeInfo != nil && nodeInfo.Type == NodeTypeRequest {
+		return nodeInfo.Request, "/" + nodeInfo.FullPath
 	}
-	return nil
+	return nil, ""
 }
 
 // getSelectedNodeInfo returns the node info for the selected tree item
@@ -204,13 +305,13 @@ func (p *projectViewPanelGroup) getSelectedNodeInfo() *TreeNodeInfo {
 
 // openSelectedRequest opens the selected request from project tree in a new tab
 func (p *projectViewPanelGroup) openSelectedRequest(projectWindow TabManager) {
-	req := p.getSelectedRequest()
+	req, path := p.getSelectedRequest()
 	if req == nil {
 		return
 	}
 
 	// Open in new tab bound to the request
-	projectWindow.createRequestTab(req)
+	projectWindow.createRequestTab(req, path)
 }
 
 // showContextMenu displays a context menu for the tree item
@@ -220,41 +321,18 @@ func (p *projectViewPanelGroup) showContextMenu(factory win32.ControlFactory, it
 	menu := factory.CreatePopupMenu()
 	defer menu.Destroy()
 
-	if nodeInfo == nil {
-		// Root level - can add hosts
-		menu.AddItem(menuIDAddHost, "Add Host")
-	} else {
-		switch nodeInfo.Type {
-		case NodeTypeHost:
-			menu.AddItem(menuIDAddPath, "Add Path")
-			menu.AddItem(menuIDAddMethod, "Add Method")
-			menu.AddSeparator()
-			menu.AddItem(menuIDDelete, "Delete Host")
-		case NodeTypePath:
-			menu.AddItem(menuIDAddPath, "Add Sub-Path")
-			menu.AddItem(menuIDAddMethod, "Add Method")
-			menu.AddSeparator()
-			menu.AddItem(menuIDDelete, "Delete Path")
-		case NodeTypeMethod:
-			menu.AddItem(menuIDEdit, "Edit Request")
-			menu.AddSeparator()
-			menu.AddItem(menuIDDelete, "Delete Method")
-		}
-	}
+	menu.AddItem(menuIDAddPath, "Add Sub-Path")
+	menu.AddItem(menuIDAddRequest, "Add Request")
+	menu.AddItem(menuIDEdit, "Edit")
+	menu.AddSeparator()
+	menu.AddItem(menuIDDelete, "Delete")
 
 	selectedID := menu.Show()
-	p.handleMenuAction(selectedID, itemHandle, nodeInfo)
-}
-
-// handleMenuAction handles the selected context menu action
-func (p *projectViewPanelGroup) handleMenuAction(menuID int, itemHandle uintptr, nodeInfo *TreeNodeInfo) {
-	switch menuID {
-	case menuIDAddHost:
-		p.addHost()
+	switch selectedID {
 	case menuIDAddPath:
 		p.addPath(nodeInfo)
-	case menuIDAddMethod:
-		p.addMethod(nodeInfo)
+	case menuIDAddRequest:
+		p.addRequest(nodeInfo)
 	case menuIDDelete:
 		p.deleteNode(itemHandle, nodeInfo)
 	case menuIDEdit:
@@ -264,53 +342,26 @@ func (p *projectViewPanelGroup) handleMenuAction(menuID int, itemHandle uintptr,
 	}
 }
 
-// addHost adds a new host to the tree
-func (p *projectViewPanelGroup) addHost() {
-	// Create a dummy request to populate the tree
-	req := NewRequest("New Request")
-	req.Host = "TODO: get host from user input"
-	req.Method = "GET"
-
-	p.content.BoundProject.AddRequestToTree(req)
-	p.SetState(p.content)
-}
-
 // addPath adds a new path segment to a node
 func (p *projectViewPanelGroup) addPath(nodeInfo *TreeNodeInfo) {
 	if nodeInfo == nil {
 		return
 	}
 
-	pathSegment := "TODO: get path segment from user input"
-	// Build the full path
-	fullPath := nodeInfo.FullPath + "/" + pathSegment
-
 	// Create a dummy request to populate the tree
-	req := NewRequest("New Request")
-	req.Path = "/" + fullPath
-	req.Method = "GET"
-
-	p.content.BoundProject.AddRequestToTree(req)
+	req := p.content.BoundProject.NewRequest()
+	p.content.BoundProject.AddRequestToTree(nodeInfo.FullPath, req)
 	p.SetState(p.content)
 }
 
-// addMethod adds a new HTTP method to a node
-func (p *projectViewPanelGroup) addMethod(nodeInfo *TreeNodeInfo) {
+// addRequest adds a new request to a node
+func (p *projectViewPanelGroup) addRequest(nodeInfo *TreeNodeInfo) {
 	if nodeInfo == nil {
 		return
 	}
-
-	method := "TODO: get HTTP method from user input"
-	method = strings.ToUpper(method)
-
 	// Create a new request with path (no host)
-	req := NewRequest(method + " " + nodeInfo.FullPath)
-	req.Path = "/" + nodeInfo.FullPath
-	req.Method = method
-	req.Headers["Content-Type"] = "application/json"
-	req.Headers["Accept"] = "application/json"
-
-	p.content.BoundProject.AddRequestToTree(req)
+	req := p.content.BoundProject.NewRequest()
+	p.content.BoundProject.AddRequestToTree(nodeInfo.FullPath, req)
 	p.SetState(p.content)
 }
 
@@ -320,43 +371,84 @@ func (p *projectViewPanelGroup) deleteNode(_ uintptr, nodeInfo *TreeNodeInfo) {
 		return
 	}
 
+	p.controlFactory.MessageBox("Warning", "Not yet implemented: deleting individual requests")
+	//TODO: implement deletion
 	switch nodeInfo.Type {
-	case NodeTypeMethod:
+	case NodeTypeRequest:
 		if nodeInfo.Request != nil {
-			p.content.BoundProject.RemoveRequestFromTree(nodeInfo.Request)
+			//p.content.BoundProject.RemoveRequestFromTree(nodeInfo.Request)
 		}
-	case NodeTypeHost, NodeTypePath:
+	case NodeTypePath:
 		// Delete all requests under this path
-		segments, _ := ParseURLPath("/" + nodeInfo.FullPath)
-		node := p.content.BoundProject.Tree.Root.FindNode(segments)
-		if node != nil {
-			p.deleteNodeRecursive(node)
-		}
+		//segments, _ := ParseURLPath("/" + nodeInfo.FullPath)
+		//node := p.content.BoundProject.Tree.FindNode(segments)
+		//if node != nil {
+		//	p.deleteNodeRecursive(node)
+		//}
 	}
 
 	p.SetState(p.content)
 }
 
-// deleteNodeRecursive deletes all requests in a node and its children
-func (p *projectViewPanelGroup) deleteNodeRecursive(node *RequestNode) {
-	// Delete all requests in this node
-	for _, req := range node.Requests {
-		p.content.BoundProject.RemoveRequestFromTree(req)
-	}
+const (
+	environmentColumnDefault = iota
+	environmentColumnName
+	environmentColumnBaseURL
+)
 
-	// Recursively delete children
-	for _, child := range node.Children {
-		p.deleteNodeRecursive(child)
-	}
-}
-
-func createProjectViewPanel(factory win32.ControlFactory, tabManager TabManager) *projectViewPanelGroup {
+func createProjectViewPanel(factory win32.ControlFactory, tabManager TabManager, projectManager ProjectManager) *projectViewPanelGroup {
 	group := &projectViewPanelGroup{
-		projectInfo:  factory.CreateLabel("Double-click a request to open it in a new tab"),
-		timeoutLabel: factory.CreateLabel("Request Timeout (milliseconds):"),
-		timeoutInput: factory.CreateInput(),
+		envLabel:       factory.CreateLabel("Environments:"),
+		projectInfo:    factory.CreateLabel("Double-click a request to open it in a new tab"),
+		timeoutLabel:   factory.CreateLabel("Request Timeout (milliseconds):"),
+		timeoutInput:   factory.CreateInput(),
+		controlFactory: factory,
+		tabManager:     tabManager,
 	}
 
+	// Create environment ListView
+	group.envListView = factory.CreateListView()
+	group.envListView.InsertColumn(environmentColumnDefault, "*", 20)
+	group.envListView.InsertColumn(environmentColumnName, "Name", 150)
+	group.envListView.InsertColumn(environmentColumnBaseURL, "Base URL", 200)
+
+	// Set up edit end callback for in-place editing
+	group.envListView.SetOnEditEnd(func(row, col int, newText string) {
+		if group.content != nil && group.content.BoundProject != nil {
+			if row >= 0 && row < len(group.content.BoundProject.Environments) {
+				env := &group.content.BoundProject.Environments[row]
+				switch col {
+				case environmentColumnName:
+					// Update name
+					env.Name = newText
+				case environmentColumnBaseURL:
+					// Update BaseURL - validate it's not empty
+					if newText != "" {
+						env.BaseURL = newText
+					} else {
+						// Restore original value if empty
+						group.envListView.SetItemText(row, col, env.BaseURL)
+						factory.MessageBox("Invalid Input", "Base URL cannot be empty")
+					}
+				}
+				// Refresh the list to update the display
+				group.populateEnvironmentList()
+			}
+		}
+	})
+
+	// Environment management buttons
+	group.addEnvBtn = factory.CreateButton("Add Env", func() {
+		group.addEnvironment()
+	})
+	group.deleteEnvBtn = factory.CreateButton("Delete Env", func() {
+		group.deleteEnvironment()
+	})
+	group.setDefaultBtn = factory.CreateButton("Set Default", func() {
+		group.setDefaultEnvironment()
+	})
+
+	// Create project tree view
 	group.projectTreeView = factory.CreateTreeView(func(tvc *win32.TreeViewControl) {
 		group.openSelectedRequest(tabManager)
 	})
@@ -375,9 +467,6 @@ func createProjectViewPanel(factory win32.ControlFactory, tabManager TabManager)
 			group.deleteNode(group.projectTreeView.GetSelection(), nodeInfo)
 		}
 	})
-	group.addHostBtn = factory.CreateButton("Add Host", func() {
-		group.addHost()
-	})
 	group.addPathBtn = factory.CreateButton("Add Path", func() {
 		nodeInfo := group.getSelectedNodeInfo()
 		if nodeInfo != nil {
@@ -387,18 +476,32 @@ func createProjectViewPanel(factory win32.ControlFactory, tabManager TabManager)
 	group.addMethodBtn = factory.CreateButton("Add Method", func() {
 		nodeInfo := group.getSelectedNodeInfo()
 		if nodeInfo != nil {
-			group.addMethod(nodeInfo)
+			group.addRequest(nodeInfo)
 		}
 	})
 	group.saveBtn = factory.CreateButton("Save Project", func() {
 		group.SaveState() // Save timeout before saving to file
-		group.saveProject(factory)
+		projectManager.saveProject()
 	})
 
 	group.ControllerGroup = win32.NewControllerGroup(
-		group.projectTreeView, group.openReqBtn, group.deleteReqBtn,
-		group.addHostBtn, group.addPathBtn, group.addMethodBtn,
-		group.projectInfo, group.saveBtn, group.timeoutLabel, group.timeoutInput,
+		group.envLabel,
+		group.envListView,
+		group.addEnvBtn,
+		group.deleteEnvBtn,
+		group.setDefaultBtn,
+		group.projectTreeView,
+		group.openReqBtn,
+		group.deleteReqBtn,
+		group.projectTreeView,
+		group.openReqBtn,
+		group.deleteReqBtn,
+		group.addPathBtn,
+		group.addMethodBtn,
+		group.projectInfo,
+		group.saveBtn,
+		group.timeoutLabel,
+		group.timeoutInput,
 	)
 	return group
 }

@@ -34,6 +34,7 @@ const (
 	WM_DESTROY       = 0x0002
 	WM_SIZE          = 0x0005
 	WM_ACTIVATE      = 0x0006
+	WM_KILLFOCUS     = 0x0008
 	WM_PAINT         = 0x000F
 	WM_CLOSE         = 0x0010
 	WM_ERASEBKGND    = 0x0014
@@ -46,6 +47,7 @@ const (
 	WM_NOTIFY        = 0x004E
 	WM_COMMAND       = 0x0111
 	WM_CONTEXTMENU   = 0x007B
+	WM_KEYDOWN       = 0x0100
 	WM_MOUSEMOVE     = 0x0200
 	WM_LBUTTONDOWN   = 0x0201
 	WM_LBUTTONUP     = 0x0202
@@ -99,7 +101,10 @@ const (
 	ES_LEFT        = 0x0000
 	ES_AUTOHSCROLL = 0x0080
 
-	MB_OK = 0x00000000
+	MB_OK    = 0x00000000
+	MB_YESNO = 0x00000004
+	ID_YES   = 6
+	ID_NO    = 7
 
 	// Drawing constants
 	TRANSPARENT = 1
@@ -201,7 +206,9 @@ const (
 	// Button notifications
 	BN_CLICKED = 0
 
-	GWLP_ID = -12
+	// Get/SetWindowLongPtr indices
+	GWLP_ID      = -12
+	GWLP_WNDPROC = -4
 
 	// Checkbox helper functions
 	BM_GETCHECK = 0x00F0
@@ -228,10 +235,10 @@ const (
 	TVIF_TEXT         = 0x0001
 	TVIF_PARAM        = 0x0004
 	TVIF_HANDLE       = 0x0010
-	TVI_ROOT          = ^uintptr(0x10000)
-	TVI_FIRST         = ^uintptr(0x0FFFF)
-	TVI_LAST          = ^uintptr(0x0FFFE)
-	TVI_SORT          = ^uintptr(0x0FFFD)
+	TVI_ROOT          = ^uintptr(0xFFFF) // -0x10000 sign-extended
+	TVI_FIRST         = ^uintptr(0xFFFE) // -0x0FFFF sign-extended
+	TVI_LAST          = ^uintptr(0xFFFD) // -0x0FFFE sign-extended
+	TVI_SORT          = ^uintptr(0xFFFC) // -0x0FFFD sign-extended
 	NM_DBLCLK         = ^uint32(3) + 1   // -3 as unsigned
 	NM_RCLICK         = ^uint32(5) + 1   // -5 as unsigned
 	TVN_SELCHANGEDW   = ^uint32(401) + 1 // -401 as unsigned
@@ -249,6 +256,48 @@ const (
 	TCIF_PARAM         = 0x0008
 	TCN_SELCHANGE      = ^uint32(550) + 1 // -550 as unsigned
 
+	// ListView constants
+	LVS_REPORT                   = 0x0001
+	LVS_SINGLESEL                = 0x0004
+	LVS_SHOWSELALWAYS            = 0x0008
+	LVS_NOSORTHEADER             = 0x8000
+	LVM_INSERTCOLUMNW            = 0x1061
+	LVM_INSERTITEMW              = 0x104D
+	LVM_SETITEMW                 = 0x104C
+	LVM_GETITEMW                 = 0x104B
+	LVM_DELETEITEM               = 0x1008
+	LVM_DELETEALLITEMS           = 0x1009
+	LVM_GETNEXTITEM              = 0x100C
+	LVM_GETITEMCOUNT             = 0x1004
+	LVM_ENSUREVISIBLE            = 0x1013
+	LVM_SETITEMTEXTW             = 0x1074
+	LVM_SETEXTENDEDLISTVIEWSTYLE = 0x1036
+	LVM_SUBITEMHITTEST           = 0x1039
+	LVM_GETITEMRECT              = 0x100E
+	LVM_GETSUBITEMRECT           = 0x1038
+	LVM_SETITEMSTATE             = 0x102B
+	LVS_EX_FULLROWSELECT         = 0x00000020
+	LVS_EX_GRIDLINES             = 0x00000001
+	LVIF_TEXT                    = 0x0001
+	LVIF_PARAM                   = 0x0004
+	LVIF_STATE                   = 0x0008
+	LVCF_TEXT                    = 0x0004
+	LVCF_WIDTH                   = 0x0002
+	LVNI_SELECTED                = 0x0002
+	LVIS_SELECTED                = 0x0002
+	LVIS_FOCUSED                 = 0x0001
+	LVN_ITEMCHANGED              = ^uint32(100) + 1 // -100 as unsigned
+	LVIR_BOUNDS                  = 0
+	LVIR_LABEL                   = 2
+	LVM_GETITEMTEXTW             = 0x1073
+
+	// Edit control messages
+	EM_SETSEL      = 0x00B1
+	EM_SETREADONLY = 0x00CF
+
+	// Virtual key codes
+	VK_RETURN = 0x0D
+	VK_ESCAPE = 0x1B
 )
 
 // ComCtl32 Common Control Class Names

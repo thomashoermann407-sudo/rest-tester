@@ -2,13 +2,14 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"hoermi.com/rest-test/win32"
 )
 
 // ProjectWindow holds all UI state for the main application window
 type ProjectWindow struct {
-	mainWindow *win32.Window
+	mainWindow win32.ControlFactory
 	tabs       *win32.TabManager[any]
 
 	// Current loaded project
@@ -22,13 +23,15 @@ type TabManager interface {
 	createSettingsTab()
 	createWelcomeTab()
 	createProjectViewTab()
-	createRequestTab(req *Request)
+	createRequestTab(req *Request, path string)
 }
 
 type ProjectManager interface {
 	newProject()
 	openProject()
 	openProjectFromPath(filePath string)
+	saveProject()
+	newRequest()
 }
 
 func NewProjectWindow() *ProjectWindow {
@@ -41,9 +44,35 @@ func NewProjectWindow() *ProjectWindow {
 	}
 	panels := tabs.GetPanels()
 	panels.Add(PanelRequest, createRequestPanel(pw.mainWindow))
-	panels.Add(PanelProjectView, createProjectViewPanel(pw.mainWindow, pw))
+	panels.Add(PanelProjectView, createProjectViewPanel(pw.mainWindow, pw, pw))
 	panels.Add(PanelSettings, createSettingsPanel(pw.mainWindow))
 	panels.Add(PanelWelcome, createWelcomePanel(pw.mainWindow, pw))
+
+	settings, err := InitSettings()
+	if err != nil {
+		mainWindow.MessageBox("Error", "Error initializing settings: "+err.Error())
+		return nil
+	}
+	pw.settings = settings
+
+	// Handle button clicks
+	mainWindow.OnCommand = tabs.GetPanels().HandleCommand
+	// Handle window resizing
+	mainWindow.OnResize = tabs.GetPanels().Resize
+	tabs.OnTabClosed = func() {
+		// If no tabs left, show welcome tab
+		if tabs.GetTabCount() == 0 {
+			pw.createWelcomeTab()
+		}
+	}
+
+	// Wire up the tab manager's menu button callback
+	tabs.OnMenuClick = pw.showContextMenu
+	tabs.OnNewTab = pw.addNewTab
+
+	// Start with the Welcome Tab
+	pw.createWelcomeTab()
+
 	return pw
 }
 
@@ -78,7 +107,7 @@ func (pw *ProjectWindow) showContextMenu() {
 	case menuSettings:
 		pw.createSettingsTab()
 	case menuAbout:
-		pw.mainWindow.MessageBox("REST Tester v1.0\nA modern REST API testing tool", "About")
+		pw.mainWindow.MessageBox("About", "REST Tester v1.0\nA modern REST API testing tool")
 	}
 }
 
@@ -92,7 +121,7 @@ func (pw *ProjectWindow) addNewTab() {
 
 func (pw *ProjectWindow) newRequest() {
 	req := pw.currentProject.NewRequest()
-	pw.createRequestTab(req)
+	pw.createPendingRequestTab(req)
 }
 
 func (pw *ProjectWindow) newProject() {
@@ -113,17 +142,39 @@ func (pw *ProjectWindow) openProject() {
 	pw.openProjectFromPath(filePath)
 }
 
+func (pw *ProjectWindow) saveProject() {
+
+	defaultName := pw.currentProject.Name
+	filePath, ok := pw.mainWindow.SaveFileDialog(
+		"Save Project",
+		"REST Project Files (*.rtp)|*.rtp|All Files (*.*)|*.*|",
+		"rtp",
+		defaultName,
+	)
+	if !ok {
+		return
+	}
+
+	if err := pw.currentProject.Save(filePath); err != nil {
+		pw.mainWindow.MessageBox("Error", fmt.Sprintf("Error saving project: %v", err))
+		return
+	}
+
+	// Update project name from filename
+	pw.currentProject.Name = filepath.Base(filePath)
+}
+
 // openProjectFromPath opens a project from a specific file path
 func (pw *ProjectWindow) openProjectFromPath(filePath string) {
 	project, err := LoadProject(filePath)
 	if err != nil {
-		pw.mainWindow.MessageBox(fmt.Sprintf("Error loading project: %v", err), "Error")
+		pw.mainWindow.MessageBox("Error", fmt.Sprintf("Error loading project: %v", err))
 		return
 	}
 
 	// Add to recent projects
 	if err := pw.settings.addRecentProject(filePath); err != nil {
-		pw.mainWindow.MessageBox(fmt.Sprintf("Error adding recent project: %v", err), "Warning")
+		pw.mainWindow.MessageBox("Warning", fmt.Sprintf("Error adding recent project: %v", err))
 	}
 
 	pw.currentProject = project
@@ -133,13 +184,26 @@ func (pw *ProjectWindow) openProjectFromPath(filePath string) {
 }
 
 // createRequestTab creates a new request tab bound to a Request object
-func (pw *ProjectWindow) createRequestTab(req *Request) {
+func (pw *ProjectWindow) createRequestTab(req *Request, path string) {
 	content := &RequestTabContent{
 		BoundRequest: req,
 		BoundProject: pw.currentProject,
+		Path:         path,
 		Settings:     pw.settings,
 	}
 	name := req.Method + " " + req.Name
+	pw.tabs.AddTab(name, content, PanelRequest)
+}
+
+func (pw *ProjectWindow) createPendingRequestTab(req *Request) {
+	content := &RequestTabContent{
+		BoundRequest: req,
+		BoundProject: pw.currentProject,
+		Path:         "/",
+		Settings:     pw.settings,
+		Pending:      true,
+	}
+	name := "New Request"
 	pw.tabs.AddTab(name, content, PanelRequest)
 }
 

@@ -39,6 +39,7 @@ type ControlFactory interface {
 	CreateComboBox() *ComboBoxControl
 	CreateEditableComboBox() *ComboBoxControl
 	CreateListBox(onDoubleClick func(*ListBoxControl)) *ListBoxControl
+	CreateListView() *ListViewControl
 	CreateTreeView(onDoubleClick func(*TreeViewControl)) *TreeViewControl
 	CreateTabControl() *TabControlControl
 	CreateInput() *Control
@@ -47,6 +48,7 @@ type ControlFactory interface {
 	CreateMultilineEdit(readonly bool) *Control
 	CreateCodeEdit(readonly bool) *Control
 	MessageBox(title, message string) int32
+	MessageBoxYesNo(title, message string) int32
 	OpenFileDialog(title, filter, defaultExt string) (string, bool)
 	SaveFileDialog(title, filter, defaultExt, defaultName string) (string, bool)
 	CreatePopupMenu() *PopupMenu
@@ -165,18 +167,32 @@ func (control *Control) ID() int {
 }
 
 func (control *Control) GetText() string {
-	length, _, _ := procGetWindowTextLengthW.Call(uintptr(control.Hwnd))
+	return getText(control.Hwnd)
+}
+
+func getText(hwnd hWnd) string {
+	length, _, _ := procGetWindowTextLengthW.Call(uintptr(hwnd))
 	if length == 0 {
 		return ""
 	}
 	buf := make([]uint16, length+1)
-	procGetWindowTextW.Call(uintptr(control.Hwnd), uintptr(unsafe.Pointer(&buf[0])), length+1)
+	procGetWindowTextW.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&buf[0])), length+1)
 	return syscall.UTF16ToString(buf)
 }
 
 func (control *Control) SetText(text string) bool {
 	ret, _, _ := procSetWindowTextW.Call(uintptr(control.Hwnd), uintptr(unsafe.Pointer(StringToUTF16Ptr(text))))
 	return ret != 0
+}
+
+func (control *Control) SetReadOnly(readonly bool) {
+	var wParam uintptr
+	if readonly {
+		wParam = 1
+	} else {
+		wParam = 0
+	}
+	sendMessage(control.Hwnd, EM_SETREADONLY, wParam, 0)
 }
 
 func (control *Control) MoveWindow(x, y, width, height int32) bool {
@@ -343,6 +359,7 @@ type ListBoxControl struct {
 
 // CreateListBox creates a listbox control
 func (w *Window) CreateListBox(onDoubleClick func(*ListBoxControl)) *ListBoxControl {
+	id := nextID()
 	hwnd := createWindowEx(
 		WS_EX_CLIENTEDGE,
 		StringToUTF16Ptr(WC_LISTBOX),
@@ -350,12 +367,14 @@ func (w *Window) CreateListBox(onDoubleClick func(*ListBoxControl)) *ListBoxCont
 		WS_CHILD|WS_VSCROLL|LBS_NOTIFY|LBS_HASSTRINGS|LBS_NOINTEGRALHEIGHT,
 		0, 0, 0, 0,
 		w.hwnd,
-		hMenu(uintptr(nextID())),
+		hMenu(uintptr(id)),
 		getModuleHandle(nil),
 		nil,
 	)
 	w.applyFont(hwnd)
-	return &ListBoxControl{ClickControl: ClickControl{Control: Control{Hwnd: hwnd}}, onDoubleClick: onDoubleClick}
+	listBox := &ListBoxControl{ClickControl: ClickControl{Control: Control{Hwnd: hwnd}}, onDoubleClick: onDoubleClick}
+	w.controls[id] = listBox
+	return listBox
 }
 
 func (l *ListBoxControl) OnDoubleClick() {
@@ -389,10 +408,327 @@ func (l *ListBoxControl) ResetContent() {
 	sendMessage(l.Hwnd, LB_RESETCONTENT, 0, 0)
 }
 
+type ListViewControl struct {
+	ClickControl
+	onSelChange  func(*ListViewControl)
+	editControl  hWnd
+	callbackPtr  uintptr
+	editingRow   int
+	editingCol   int
+	isEditing    bool
+	onEditEnd    func(row, col int, newText string)
+	parentWindow *Window
+}
+
+// CreateListView creates a listview control in report (details) mode
+func (w *Window) CreateListView() *ListViewControl {
+	id := nextID()
+	hwnd := createWindowEx(
+		WS_EX_CLIENTEDGE,
+		StringToUTF16Ptr(WC_LISTVIEW),
+		nil,
+		WS_CHILD|WS_VISIBLE|LVS_REPORT|LVS_SINGLESEL|LVS_SHOWSELALWAYS,
+		0, 0, 0, 0,
+		w.hwnd,
+		hMenu(uintptr(id)),
+		getModuleHandle(nil),
+		nil,
+	)
+	w.applyFont(hwnd)
+
+	// Set extended styles for better appearance
+	sendMessage(hwnd, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT|LVS_EX_GRIDLINES)
+
+	listView := &ListViewControl{
+		ClickControl: ClickControl{Control: Control{Hwnd: hwnd}},
+		editingRow:   -1,
+		editingCol:   -1,
+		isEditing:    false,
+		parentWindow: w,
+	}
+	w.controls[id] = listView
+	return listView
+}
+
+func (lv *ListViewControl) SetOnSelChange(handler func(*ListViewControl)) {
+	lv.onSelChange = handler
+}
+
+func (lv *ListViewControl) OnSelChange() {
+	if lv.onSelChange != nil {
+		lv.onSelChange(lv)
+	}
+}
+
+// InsertColumn adds a column to the listview
+func (lv *ListViewControl) InsertColumn(index int, text string, width int32) int {
+	textPtr := StringToUTF16Ptr(text)
+	col := LVCOLUMNW{
+		Mask:    LVCF_TEXT | LVCF_WIDTH,
+		PszText: textPtr,
+		Cx:      width,
+	}
+	ret := sendMessage(lv.Hwnd, LVM_INSERTCOLUMNW, uintptr(index), uintptr(unsafe.Pointer(&col)))
+	return int(ret)
+}
+
+// InsertItem adds a new row to the listview
+func (lv *ListViewControl) InsertItem(index int, text string, lParam uintptr) int {
+	textPtr := StringToUTF16Ptr(text)
+	item := LVITEMW{
+		Mask:    LVIF_TEXT | LVIF_PARAM,
+		IItem:   int32(index),
+		PszText: textPtr,
+		LParam:  lParam,
+	}
+	ret := sendMessage(lv.Hwnd, LVM_INSERTITEMW, 0, uintptr(unsafe.Pointer(&item)))
+	return int(ret)
+}
+
+// SetItemText sets the text of a subitem (column)
+func (lv *ListViewControl) SetItemText(row, col int, text string) {
+	textPtr := StringToUTF16Ptr(text)
+	item := LVITEMW{
+		ISubItem: int32(col),
+		PszText:  textPtr,
+	}
+	sendMessage(lv.Hwnd, LVM_SETITEMTEXTW, uintptr(row), uintptr(unsafe.Pointer(&item)))
+}
+
+// GetSelectedIndex returns the index of the selected item (-1 if none)
+func (lv *ListViewControl) GetSelectedIndex() int {
+	ret := sendMessage(lv.Hwnd, LVM_GETNEXTITEM, ^uintptr(0), LVNI_SELECTED)
+	return int(int32(ret))
+}
+
+// SetCurSel selects an item by index
+func (lv *ListViewControl) SetCurSel(index int) {
+	// First, deselect all items
+	item := LVITEMW{
+		StateMask: LVIS_SELECTED | LVIS_FOCUSED,
+		State:     0,
+	}
+	sendMessage(lv.Hwnd, LVM_SETITEMSTATE, ^uintptr(0), uintptr(unsafe.Pointer(&item)))
+
+	// Then select and focus the specified item
+	item.State = LVIS_SELECTED | LVIS_FOCUSED
+	sendMessage(lv.Hwnd, LVM_SETITEMSTATE, uintptr(index), uintptr(unsafe.Pointer(&item)))
+
+	// Ensure the item is visible
+	sendMessage(lv.Hwnd, LVM_ENSUREVISIBLE, uintptr(index), 0)
+}
+
+// GetItemCount returns the number of items in the listview
+func (lv *ListViewControl) GetItemCount() int {
+	ret := sendMessage(lv.Hwnd, LVM_GETITEMCOUNT, 0, 0)
+	return int(ret)
+}
+
+// GetItemLParam gets the user data associated with an item
+func (lv *ListViewControl) GetItemLParam(index int) uintptr {
+	item := LVITEMW{
+		Mask:  LVIF_PARAM,
+		IItem: int32(index),
+	}
+	sendMessage(lv.Hwnd, LVM_GETITEMW, 0, uintptr(unsafe.Pointer(&item)))
+	return item.LParam
+}
+
+// DeleteItem removes an item by index
+func (lv *ListViewControl) DeleteItem(index int) bool {
+	ret := sendMessage(lv.Hwnd, LVM_DELETEITEM, uintptr(index), 0)
+	return ret != 0
+}
+
+// DeleteAllItems removes all items
+func (lv *ListViewControl) DeleteAllItems() bool {
+	ret := sendMessage(lv.Hwnd, LVM_DELETEALLITEMS, 0, 0)
+	return ret != 0
+}
+
+// SetOnEditEnd sets the callback for when editing is complete
+func (lv *ListViewControl) SetOnEditEnd(handler func(row, col int, newText string)) {
+	lv.onEditEnd = handler
+}
+
+// GetItemText retrieves the text of a cell
+func (lv *ListViewControl) GetItemText(row, col int) string {
+	buf := make([]uint16, 260)
+	item := LVITEMW{
+		ISubItem:   int32(col),
+		PszText:    &buf[0],
+		CchTextMax: 260,
+	}
+	sendMessage(lv.Hwnd, LVM_GETITEMTEXTW, uintptr(row), uintptr(unsafe.Pointer(&item)))
+	return syscall.UTF16ToString(buf)
+}
+
+// HitTestEx performs a hit test to determine which cell was clicked
+func (lv *ListViewControl) HitTestEx(x, y int32) (row, col int) {
+	var hti LVHITTESTINFO
+	hti.Pt.X = x
+	hti.Pt.Y = y
+	sendMessage(lv.Hwnd, LVM_SUBITEMHITTEST, 0, uintptr(unsafe.Pointer(&hti)))
+	return int(hti.IItem), int(hti.ISubItem)
+}
+
+// GetSubItemRect gets the rectangle for a specific cell
+func (lv *ListViewControl) GetSubItemRect(row, col int) rect {
+	var rc rect
+	rc.Top = int32(col)
+	rc.Left = LVIR_LABEL
+	sendMessage(lv.Hwnd, LVM_GETSUBITEMRECT, uintptr(row), uintptr(unsafe.Pointer(&rc)))
+	return rc
+}
+
+// StartEdit begins in-place editing of a cell.
+// Note: We destroy and recreate the edit control for each edit session rather than
+// reusing a single control. This approach:
+// - Ensures proper cleanup of subclassing/callbacks
+// - Avoids potential issues with text/state not being properly reset
+// - Is simpler than managing show/hide/reposition logic
+// - Has negligible performance impact (editing is infrequent)
+func (lv *ListViewControl) StartEdit(row, col int) {
+	if lv.isEditing {
+		lv.EndEdit(true) // Save current edit
+	}
+
+	if row < 0 || col < 0 {
+		return
+	}
+
+	// Get the cell rectangle
+	cellRect := lv.GetSubItemRect(row, col)
+
+	// Get current text
+	currentText := lv.GetItemText(row, col)
+
+	// Create edit control if it doesn't exist
+	if lv.editControl == 0 {
+		id := nextID()
+		lv.editControl = createWindowEx(
+			0,
+			StringToUTF16Ptr(WC_EDIT),
+			StringToUTF16Ptr(currentText),
+			WS_CHILD|ES_LEFT|ES_AUTOHSCROLL|WS_VISIBLE,
+			cellRect.Left+2, cellRect.Top+2, cellRect.Right-cellRect.Left-4, cellRect.Bottom-cellRect.Top-2,
+			lv.Hwnd,
+			hMenu(uintptr(id)),
+			getModuleHandle(nil),
+			nil,
+		)
+		lv.parentWindow.applyFont(lv.editControl)
+		callback := func(hwnd hWnd, msg uintptr, wParam, lParam uintptr) uintptr {
+			result := callWindowProc(lv.callbackPtr, hwnd, msg, wParam, lParam)
+			switch msg {
+			case WM_KEYDOWN:
+				lv.HandleKeyDown(wParam)
+			case WM_KILLFOCUS:
+				lv.EndEdit(true)
+			}
+			return result
+		}
+		lv.callbackPtr = setWindowLongPtr(lv.editControl, GWLP_WNDPROC, syscall.NewCallback(callback))
+
+	}
+
+	// Set focus to edit control and select all text
+	procSetFocus.Call(uintptr(lv.editControl))
+	sendMessage(lv.editControl, EM_SETSEL, 0, ^uintptr(0))
+
+	lv.editingRow = row
+	lv.editingCol = col
+	lv.isEditing = true
+}
+
+// EndEdit completes the editing and updates the cell
+func (lv *ListViewControl) EndEdit(save bool) {
+	if !lv.isEditing || lv.editControl == 0 {
+		return
+	}
+
+	if save {
+		newText := getText(lv.editControl)
+		lv.SetItemText(lv.editingRow, lv.editingCol, newText)
+
+		// Call the callback if set
+		if lv.onEditEnd != nil {
+			lv.onEditEnd(lv.editingRow, lv.editingCol, newText)
+		}
+	}
+
+	destroyWindow(lv.editControl)
+	lv.editControl = 0
+	lv.isEditing = false
+	lv.editingRow = -1
+	lv.editingCol = -1
+
+	// Return focus to ListView
+	procSetFocus.Call(uintptr(lv.Hwnd))
+}
+
+// IsEditing returns whether the ListView is currently in edit mode
+func (lv *ListViewControl) IsEditing() bool {
+	return lv.isEditing
+}
+
+// HandleKeyDown handles key events during editing.
+// This is called from the edit control's subclassed window procedure,
+// not from the main window message loop.
+// Note: The isEditing check is technically redundant since this is only
+// called when the edit control exists and has focus, but kept for safety.
+func (lv *ListViewControl) HandleKeyDown(key uintptr) bool {
+	if !lv.isEditing {
+		return false
+	}
+
+	switch key {
+	case VK_RETURN:
+		lv.EndEdit(true)
+		return true
+	case VK_ESCAPE:
+		lv.EndEdit(false)
+		return true
+	}
+	return false
+}
+
 type NMHDR struct {
 	HwndFrom hWnd
 	IdFrom   uintptr
 	Code     uint32
+}
+
+type LVCOLUMNW struct {
+	Mask       uint32
+	Fmt        int32
+	Cx         int32
+	PszText    *uint16
+	CchTextMax int32
+	ISubItem   int32
+	IImage     int32
+	IOrder     int32
+}
+
+type LVITEMW struct {
+	Mask       uint32
+	IItem      int32
+	ISubItem   int32
+	State      uint32
+	StateMask  uint32
+	PszText    *uint16
+	CchTextMax int32
+	IImage     int32
+	LParam     uintptr
+	IIndent    int32
+}
+
+type LVHITTESTINFO struct {
+	Pt       point
+	Flags    uint32
+	IItem    int32
+	ISubItem int32
+	IGroup   int32
 }
 
 type TVHITTESTINFO struct {
@@ -437,7 +773,7 @@ func (w *Window) CreateTreeView(onDoubleClick func(*TreeViewControl)) *TreeViewC
 		WS_CHILD|WS_VISIBLE|WS_VSCROLL|TVS_HASBUTTONS|TVS_HASLINES|TVS_LINESATROOT|TVS_SHOWSELALWAYS,
 		0, 0, 0, 0,
 		w.hwnd,
-		hMenu(uintptr(nextID())),
+		hMenu(uintptr(id)), // Use the same ID for the control
 		getModuleHandle(nil),
 		nil,
 	)

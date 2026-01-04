@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,9 +11,8 @@ import (
 type NodeType int
 
 const (
-	NodeTypeHost   NodeType = iota // Root level - host/domain
-	NodeTypePath                   // Path segments
-	NodeTypeMethod                 // HTTP method (leaf)
+	NodeTypePath    NodeType = iota // Path segments
+	NodeTypeRequest                 // Request nodes
 )
 
 // CertificateConfig holds client certificate settings
@@ -32,129 +30,57 @@ type Environment struct {
 }
 
 type ProjectSettings struct {
-	TimeoutInMs int64 `json:"timeoutInMs"` // Request timeout in milliseconds
+	TimeoutInMs           int64 `json:"timeoutInMs"`           // Request timeout in milliseconds
+	DefaultEnvironmentIdx int   `json:"defaultEnvironmentIdx"` // Index of default environment (-1 for none)
 }
 
 // RequestNode represents a node in the hierarchical REST resource tree
 type RequestNode struct {
-	Segment  string                  `json:"segment"`  // URL segment (e.g., "users", "api", "v1")
-	Requests map[string]*Request     `json:"requests"` // Requests by method (GET, POST, etc.)
-	Children map[string]*RequestNode `json:"children"` // Child nodes by segment name
+	Segment  string         `json:"segment"`  // URL segment (e.g., "users", "api", "v1")
+	Requests []*Request     `json:"requests"` // Requests by method (GET, POST, etc.)
+	Children []*RequestNode `json:"children"` // Child nodes
 }
 
 // NewRequestNode creates a new request node
 func NewRequestNode(segment string) *RequestNode {
 	return &RequestNode{
-		Segment:  segment,
-		Requests: make(map[string]*Request),
-		Children: make(map[string]*RequestNode),
+		Segment: segment,
 	}
 }
 
-// AddRequest adds a request to this node for a specific HTTP method
-func (n *RequestNode) AddRequest(method string, req *Request) {
-	n.Requests[method] = req
-}
-
-// GetRequest retrieves a request for a specific HTTP method
-func (n *RequestNode) GetRequest(method string) *Request {
-	return n.Requests[method]
-}
-
-// GetOrCreateChild gets or creates a child node by segment name
-func (n *RequestNode) GetOrCreateChild(segment string) *RequestNode {
-	if child, exists := n.Children[segment]; exists {
-		return child
+// AddRequestAtPath adds a request at the specified full path
+func (n *RequestNode) AddRequestAtPath(fullPath string, req *Request) {
+	path := strings.TrimPrefix(fullPath, "/")
+	for _, child := range n.Children {
+		if remainingPath, ok := strings.CutPrefix(path, child.Segment); ok {
+			if remainingPath == "" {
+				child.Requests = append(child.Requests, req)
+				return
+			} else {
+				child.AddRequestAtPath(remainingPath, req)
+				return
+			}
+		}
 	}
-	child := NewRequestNode(segment)
-	n.Children[segment] = child
-	return child
-}
-
-// FindNode finds a node by following a path of segments
-func (n *RequestNode) FindNode(segments []string) *RequestNode {
-	if len(segments) == 0 {
-		return n
-	}
-	if child, exists := n.Children[segments[0]]; exists {
-		return child.FindNode(segments[1:])
-	}
-	return nil
-}
-
-// RequestTree represents the hierarchical organization of requests
-type RequestTree struct {
-	Root *RequestNode `json:"root"`
-}
-
-// NewRequestTree creates a new request tree
-func NewRequestTree() *RequestTree {
-	return &RequestTree{
-		Root: NewRequestNode(""),
-	}
-}
-
-// ParseURLPath parses a URL and extracts the path segments
-func ParseURLPath(urlStr string) ([]string, error) { //TODO: remove
-	if urlStr == "" {
-		return []string{}, nil
-	}
-
-	parsedURL, err := url.Parse(urlStr)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get the path and split into segments
-	path := strings.Trim(parsedURL.Path, "/")
-	if path == "" {
-		return []string{}, nil
-	}
-
+	// If no matching child, create new nodes
 	segments := strings.Split(path, "/")
-	return segments, nil
-}
-
-// AddRequest adds a request to the tree based on its URL
-func (t *RequestTree) AddRequest(req *Request) error {
-	segments, err := ParseURLPath(req.Path)
-	if err != nil {
-		return err
-	}
-
-	// Navigate/create the tree structure
-	currentNode := t.Root
+	currentNode := n
 	for _, segment := range segments {
-		currentNode = currentNode.GetOrCreateChild(segment)
+		newNode := NewRequestNode(segment)
+		currentNode.Children = append(currentNode.Children, newNode)
+		currentNode = newNode
 	}
-
-	// Add the request to the final node
-	currentNode.AddRequest(req.Method, req)
-	return nil
-}
-
-// RemoveRequest removes a request from the tree
-func (t *RequestTree) RemoveRequest(req *Request) error {
-	segments, err := ParseURLPath(req.Path)
-	if err != nil {
-		return err
-	}
-
-	node := t.Root.FindNode(segments)
-	if node != nil {
-		delete(node.Requests, req.Method)
-	}
-	return nil
+	currentNode.Requests = append(currentNode.Requests, req)
 }
 
 // GetAllRequests returns a flat list of all requests in the tree
-func (t *RequestTree) GetAllRequests() []*Request {
+func (node *RequestNode) GetAllRequests() []*Request {
 	var requests []*Request
-	t.collectRequests(t.Root, &requests)
+	node.collectRequests(&requests)
 	return requests
 }
 
-func (t *RequestTree) collectRequests(node *RequestNode, requests *[]*Request) {
+func (node *RequestNode) collectRequests(requests *[]*Request) {
 	// Add all requests from this node
 	for _, req := range node.Requests {
 		*requests = append(*requests, req)
@@ -162,7 +88,7 @@ func (t *RequestTree) collectRequests(node *RequestNode, requests *[]*Request) {
 
 	// Recursively collect from children
 	for _, child := range node.Children {
-		t.collectRequests(child, requests)
+		child.collectRequests(requests)
 	}
 }
 
@@ -170,7 +96,7 @@ func (t *RequestTree) collectRequests(node *RequestNode, requests *[]*Request) {
 type Project struct {
 	Name         string          `json:"name"`
 	Version      string          `json:"version"`
-	Tree         *RequestTree    `json:"tree"`
+	Tree         *RequestNode    `json:"tree"`
 	Settings     ProjectSettings `json:"settings"`
 	Environments []Environment   `json:"environments"` // Available environments
 	filePath     string          // Not saved, tracks where project is stored
@@ -181,9 +107,10 @@ func NewProject(name string) *Project {
 	return &Project{
 		Name:    name,
 		Version: "2.0",
-		Tree:    NewRequestTree(),
+		Tree:    NewRequestNode("/"),
 		Settings: ProjectSettings{
-			TimeoutInMs: 30000, // Default 30 seconds
+			TimeoutInMs:           30000, // Default 30 seconds
+			DefaultEnvironmentIdx: -1,    // No default environment
 		},
 		Environments: []Environment{
 			{Name: "Local", BaseURL: "http://localhost:8080"},
@@ -191,28 +118,17 @@ func NewProject(name string) *Project {
 	}
 }
 
-// NewRequest adds a new request to the project
-func (p *Project) NewRequest() *Request {
-	// Create a new request
-	req := NewRequest("Request")
-	req.Headers["Content-Type"] = "application/json"
-	req.Headers["Accept"] = "application/json"
-	p.Tree.AddRequest(req)
-	return req
-}
-
 // AddRequestToTree adds an existing request to the tree structure
-func (p *Project) AddRequestToTree(req *Request) error {
-	return p.Tree.AddRequest(req)
+func (p *Project) AddRequestToTree(fullPath string, req *Request) {
+	p.Tree.AddRequestAtPath(fullPath, req)
 }
 
-// RemoveRequestFromTree removes a request from the tree
-func (p *Project) RemoveRequestFromTree(req *Request) error {
-	// Remove from tree
-	if err := p.Tree.RemoveRequest(req); err != nil {
-		return err
+func (p *Project) getDefaultHost() string {
+	if p.Settings.DefaultEnvironmentIdx >= 0 && p.Settings.DefaultEnvironmentIdx < len(p.Environments) {
+		env := p.Environments[p.Settings.DefaultEnvironmentIdx]
+		return env.BaseURL
 	}
-	return nil
+	return ""
 }
 
 // Save saves the project to a file

@@ -1,6 +1,8 @@
 package main
 
-import "time"
+import (
+	"time"
+)
 
 // ResponseData holds information about a single HTTP response
 type ResponseData struct {
@@ -16,8 +18,10 @@ type ResponseData struct {
 type RequestTabContent struct {
 	BoundRequest *Request // Direct binding to the Request object
 	BoundProject *Project // Reference to the project for settings
+	Path         string   // URL path for the request
 	Settings     *Settings
 	Responses    []ResponseData // Multiple responses (newest first)
+	Pending      bool           // Whether the request is pending execution
 }
 
 // TreeNodeInfo stores metadata about a tree item

@@ -34,10 +34,13 @@ var (
 	procInvalidateRect       = user32.NewProc("InvalidateRect")
 	procGetCursorPos         = user32.NewProc("GetCursorPos")
 	procScreenToClient       = user32.NewProc("ScreenToClient")
+	procSetFocus             = user32.NewProc("SetFocus")
 	procMoveWindow           = user32.NewProc("MoveWindow")
 	procFillRect             = user32.NewProc("FillRect")
 	procDrawTextW            = user32.NewProc("DrawTextW")
 	procGetWindowLongPtr     = user32.NewProc("GetWindowLongPtrW")
+	procSetWindowLongPtr     = user32.NewProc("SetWindowLongPtrW")
+	procCallWndProc          = user32.NewProc("CallWindowProcW")
 	procSetBkMode            = gdi32.NewProc("SetBkMode")
 	procSetTextColor         = gdi32.NewProc("SetTextColor")
 	procCreateSolidBrush     = gdi32.NewProc("CreateSolidBrush")
@@ -194,6 +197,21 @@ func getWindowLongPtr(hwnd hWnd, index int32) uintptr {
 	return ret
 }
 
+func setWindowLongPtr(hwnd hWnd, index int32, newLong uintptr) uintptr {
+	ret, _, _ := procSetWindowLongPtr.Call(uintptr(hwnd), uintptr(index), newLong)
+	return ret
+}
+
+func callWindowProc(lpPrevWndFunc uintptr, hwnd hWnd, msg uintptr, wparam, lparam uintptr) uintptr {
+	ret, _, _ := procCallWndProc.Call(
+		lpPrevWndFunc,
+		uintptr(hwnd),
+		msg,
+		wparam,
+		lparam,
+	)
+	return ret
+}
 func setBkMode(hdc hDc, mode int32) int32 {
 	ret, _, _ := procSetBkMode.Call(uintptr(hdc), uintptr(mode))
 	return int32(ret)
