@@ -10,7 +10,7 @@ func NewControllerGroup(controller ...Controller) *ControllerGroup {
 	clickController := make(map[int]ClickController)
 	for _, c := range controller {
 		if cc, ok := c.(ClickController); ok {
-			clickController[cc.ID()] = cc
+			clickController[c.ID()] = cc
 		}
 	}
 	return &ControllerGroup{

@@ -17,6 +17,20 @@ type ProjectWindow struct {
 	settings *Settings
 }
 
+type TabManager interface {
+	addNewTab()
+	createSettingsTab()
+	createWelcomeTab()
+	createProjectViewTab()
+	createRequestTab(req *Request)
+}
+
+type ProjectManager interface {
+	newProject()
+	openProject()
+	openProjectFromPath(filePath string)
+}
+
 func NewProjectWindow() *ProjectWindow {
 	mainWindow := win32.NewWindow("REST Tester", 1100, 850)
 	tabs := win32.NewTabManager[any](mainWindow)
@@ -26,10 +40,10 @@ func NewProjectWindow() *ProjectWindow {
 		tabs:       tabs,
 	}
 	panels := tabs.GetPanels()
-	panels.Add(PanelRequest, createRequestPanel(pw))
-	panels.Add(PanelProjectView, createProjectViewPanel(pw))
-	panels.Add(PanelSettings, createSettingsPanel(pw))
-	panels.Add(PanelWelcome, createWelcomePanel(pw))
+	panels.Add(PanelRequest, createRequestPanel(pw.mainWindow))
+	panels.Add(PanelProjectView, createProjectViewPanel(pw.mainWindow, pw))
+	panels.Add(PanelSettings, createSettingsPanel(pw.mainWindow))
+	panels.Add(PanelWelcome, createWelcomePanel(pw.mainWindow, pw))
 	return pw
 }
 
@@ -41,13 +55,15 @@ func (pw *ProjectWindow) showContextMenu() {
 	}
 	defer menu.Destroy()
 
-	menuProject := 1001
-	menuNewRequest := 1002
-	menuSettings := 1003
-	menuAbout := 1004
+	menuNewTab := 1000
+	menuSettings := 1001
+	menuAbout := 1002
 
-	menu.AddItem(menuProject, "📁 Project View")
-	menu.AddItem(menuNewRequest, "➕ New Request")
+	if pw.currentProject == nil {
+		menu.AddItem(menuNewTab, "➕ New Project")
+	} else {
+		menu.AddItem(menuNewTab, "➕ New Request")
+	}
 	menu.AddSeparator()
 	menu.AddItem(menuSettings, "⚙ Settings")
 	menu.AddSeparator()
@@ -57,10 +73,8 @@ func (pw *ProjectWindow) showContextMenu() {
 	selected := menu.Show()
 
 	switch selected {
-	case menuProject:
-		pw.createProjectViewTab()
-	case menuNewRequest:
-		pw.addNewRequestTab()
+	case menuNewTab:
+		pw.addNewTab()
 	case menuSettings:
 		pw.createSettingsTab()
 	case menuAbout:
@@ -68,27 +82,25 @@ func (pw *ProjectWindow) showContextMenu() {
 	}
 }
 
-// addNewRequestTab creates a new request tab
-func (pw *ProjectWindow) addNewRequestTab() {
-	// First ensure we have a project
+func (pw *ProjectWindow) addNewTab() {
 	if pw.currentProject == nil {
-		return
+		pw.newProject()
+	} else {
+		pw.newRequest()
 	}
+}
 
+func (pw *ProjectWindow) newRequest() {
 	req := pw.currentProject.NewRequest()
-
-	// Create tab bound to the request
 	pw.createRequestTab(req)
 }
 
-// newProject creates a new empty project
 func (pw *ProjectWindow) newProject() {
 	pw.currentProject = NewProject("Untitled Project")
 	// Open the project view tab
 	pw.createProjectViewTab()
 }
 
-// openProject opens a project from file dialog
 func (pw *ProjectWindow) openProject() {
 	filePath, ok := pw.mainWindow.OpenFileDialog(
 		"Open Project",
@@ -110,7 +122,9 @@ func (pw *ProjectWindow) openProjectFromPath(filePath string) {
 	}
 
 	// Add to recent projects
-	pw.settings.addRecentProject(filePath)
+	if err := pw.settings.addRecentProject(filePath); err != nil {
+		pw.mainWindow.MessageBox(fmt.Sprintf("Error adding recent project: %v", err), "Warning")
+	}
 
 	pw.currentProject = project
 
@@ -124,7 +138,6 @@ func (pw *ProjectWindow) createRequestTab(req *Request) {
 		BoundRequest: req,
 		BoundProject: pw.currentProject,
 		Settings:     pw.settings,
-		Status:       "Ready",
 	}
 	name := req.Method + " " + req.Name
 	pw.tabs.AddTab(name, content, PanelRequest)

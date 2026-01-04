@@ -17,6 +17,7 @@ type TabDrawer interface {
 type Window struct {
 	hwnd        hWnd
 	handlers    map[hWnd]func(msg uint32, wParam, lParam uintptr) (uintptr, bool)
+	controls    map[int]ClickController // Map control IDs to controllers
 	OnCommand   func(id int, notifyCode int)
 	OnResize    func(width, height int32)
 	OnMouseMove func(x, y int32) bool // Returns true if handled
@@ -40,6 +41,7 @@ func NewWindow(title string, width, height int32) *Window {
 
 	w := &Window{
 		handlers:       make(map[hWnd]func(msg uint32, wParam, lParam uintptr) (uintptr, bool)),
+		controls:       make(map[int]ClickController),
 		width:          width,
 		height:         height,
 		uiCallbacks:    make(map[uintptr]func()),
@@ -114,6 +116,42 @@ func NewWindow(title string, width, height int32) *Window {
 				w.OnCommand(id, notifyCode)
 				return 0, true
 			}
+
+		case WM_NOTIFY:
+			// Handle notifications from controls
+			// Note: This is a safe conversion. The lParam for WM_NOTIFY messages
+			// is guaranteed by Windows to be a valid pointer to an NMHDR structure
+			// for the duration of the message handling. This is documented Windows behavior.
+			// The unsafeptr analyzer warning is a false positive in this context.
+			nmhdr := (*NMHDR)(unsafe.Pointer(lParam))
+			if ctrl, ok := w.controls[int(nmhdr.IdFrom)]; ok {
+				//TODO: Harmozing: HandleCommand in panels.go needs to be updated to support more controls
+				switch nmhdr.Code {
+				case NM_DBLCLK:
+					ctrl.OnDoubleClick()
+					return 0, true
+				case NM_RCLICK:
+					// Handle right-click for TreeView
+					if treeView, ok := ctrl.(*TreeViewControl); ok {
+						// Get cursor position
+						var pt point
+						procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+						// Convert to client coordinates
+						procScreenToClient.Call(uintptr(treeView.Hwnd), uintptr(unsafe.Pointer(&pt)))
+						// Hit test to find the item
+						itemHandle := treeView.HitTest(pt.X, pt.Y)
+						treeView.OnRightClick(itemHandle)
+						return 0, true
+					}
+				case TCN_SELCHANGE:
+					// Handle tab selection change for TabControl
+					if tabControl, ok := ctrl.(*TabControlControl); ok {
+						tabControl.OnSelChange()
+						return 0, true
+					}
+				}
+			}
+			return 0, false
 
 		case WM_SIZE:
 			w.width = int32(lParam & 0xFFFF)

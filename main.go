@@ -24,7 +24,7 @@ func main() {
 
 	// Wire up the tab manager's menu button callback
 	tabs.OnMenuClick = pw.showContextMenu
-	tabs.OnNewTab = pw.addNewRequestTab
+	tabs.OnNewTab = pw.addNewTab
 
 	// Start with the Welcome Tab
 	pw.createWelcomeTab()

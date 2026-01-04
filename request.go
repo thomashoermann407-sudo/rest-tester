@@ -17,13 +17,16 @@ import (
 type Params map[string]string
 
 func (p Params) Format() string {
-	var parts []string
+	var builder strings.Builder
 	for _, key := range slices.Sorted(maps.Keys(p)) {
-		value := p[key]
-		parts = append(parts, fmt.Sprintf("%s: %s", key, value))
+		builder.WriteString(key)
+		builder.WriteString(": ")
+		builder.WriteString(p[key])
+		builder.WriteString("\r\n")
 	}
-	return strings.Join(parts, "\r\n")
+	return builder.String()
 }
+
 func ParseParams(input string) Params {
 	params := make(Params)
 	lines := strings.SplitSeq(input, "\r\n")
@@ -46,7 +49,8 @@ func ParseParams(input string) Params {
 type Request struct {
 	Name        string `json:"name"`
 	Method      string `json:"method"`
-	URL         string `json:"url"`
+	Host        string `json:"host"`
+	Path        string `json:"path"`
 	Headers     Params `json:"headers"`
 	QueryParams Params `json:"queryParams"`
 	Body        string `json:"body"`
@@ -57,24 +61,25 @@ func NewRequest(name string) *Request {
 	return &Request{
 		Name:        name,
 		Method:      "GET",
-		URL:         "",
+		Path:        "/",
 		Headers:     make(map[string]string),
 		QueryParams: make(map[string]string),
 		Body:        "",
 	}
 }
 
-func sendRequest(request *Request, settings *Settings, timeoutInMs int64, callback func(response string, err error)) {
+func (request *Request) sendRequest(settings *Settings, timeoutInMs int64, callback func(responseData *ResponseData, err error)) {
+	startTime := time.Now()
 
 	var requestUrl string
 	if len(request.QueryParams) == 0 {
-		requestUrl = request.URL
+		requestUrl = request.Host + request.Path
 	} else {
 		v := url.Values{}
 		for key, value := range request.QueryParams {
 			v.Set(key, value)
 		}
-		requestUrl = request.URL + "?" + v.Encode()
+		requestUrl = request.Host + request.Path + "?" + v.Encode()
 	}
 	// Create request
 	var reqBody io.Reader
@@ -84,7 +89,7 @@ func sendRequest(request *Request, settings *Settings, timeoutInMs int64, callba
 
 	req, err := http.NewRequest(request.Method, requestUrl, reqBody)
 	if err != nil {
-		callback("", err)
+		callback(nil, err)
 		return
 	}
 
@@ -100,13 +105,15 @@ func sendRequest(request *Request, settings *Settings, timeoutInMs int64, callba
 	// Create HTTP client with TLS configuration and timeout
 	client, err := createHTTPClient(settings, timeoutInMs)
 	if err != nil {
-		callback("", err)
+		callback(nil, err)
 		return
 	}
 
 	resp, err := client.Do(req)
+	duration := time.Since(startTime)
+
 	if err != nil {
-		callback("", err)
+		callback(nil, err)
 		return
 	}
 	defer resp.Body.Close()
@@ -114,7 +121,7 @@ func sendRequest(request *Request, settings *Settings, timeoutInMs int64, callba
 	// Read response
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		callback("", err)
+		callback(nil, err)
 		return
 	}
 
@@ -122,8 +129,26 @@ func sendRequest(request *Request, settings *Settings, timeoutInMs int64, callba
 	contentType := resp.Header.Get("Content-Type")
 	formattedBody := formatResponse(string(respBody), contentType)
 
+	// Extract response headers
+	headers := make(map[string]string)
+	for name, values := range resp.Header {
+		if len(values) > 0 {
+			headers[name] = values[0]
+		}
+	}
+
+	// Create response data
+	responseData := &ResponseData{
+		Body:       formattedBody,
+		Headers:    headers,
+		StatusCode: resp.StatusCode,
+		Status:     resp.Status,
+		Duration:   duration,
+		Timestamp:  time.Now(),
+	}
+
 	// Update UI
-	callback(formattedBody, nil)
+	callback(responseData, nil)
 }
 
 // createHTTPClient creates an HTTP client with optional TLS client certificate

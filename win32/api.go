@@ -33,9 +33,11 @@ var (
 	procGetClientRect        = user32.NewProc("GetClientRect")
 	procInvalidateRect       = user32.NewProc("InvalidateRect")
 	procGetCursorPos         = user32.NewProc("GetCursorPos")
+	procScreenToClient       = user32.NewProc("ScreenToClient")
 	procMoveWindow           = user32.NewProc("MoveWindow")
 	procFillRect             = user32.NewProc("FillRect")
 	procDrawTextW            = user32.NewProc("DrawTextW")
+	procGetWindowLongPtr     = user32.NewProc("GetWindowLongPtrW")
 	procSetBkMode            = gdi32.NewProc("SetBkMode")
 	procSetTextColor         = gdi32.NewProc("SetTextColor")
 	procCreateSolidBrush     = gdi32.NewProc("CreateSolidBrush")
@@ -187,6 +189,11 @@ func drawText(hdc hDc, text string, rect *rect, format uint32) int32 {
 	return int32(ret)
 }
 
+func getWindowLongPtr(hwnd hWnd, index int32) uintptr {
+	ret, _, _ := procGetWindowLongPtr.Call(uintptr(hwnd), uintptr(index))
+	return ret
+}
+
 func setBkMode(hdc hDc, mode int32) int32 {
 	ret, _, _ := procSetBkMode.Call(uintptr(hdc), uintptr(mode))
 	return int32(ret)
@@ -203,7 +210,7 @@ func createSolidBrush(color colorRef) hBrush {
 }
 
 func deleteObject(obj handle) bool {
-	if(obj == 0) {
+	if obj == 0 {
 		return false
 	}
 	ret, _, _ := procDeleteObject.Call(uintptr(obj))
@@ -283,25 +290,25 @@ const (
 )
 
 func init() {
-			initCommonControls(
-			ICC_WIN95_CLASSES |
-				ICC_STANDARD_CLASSES |
-				ICC_BAR_CLASSES |
-				ICC_TAB_CLASSES |
-				ICC_UPDOWN_CLASS |
-				ICC_PROGRESS_CLASS |
-				ICC_HOTKEY_CLASS |
-				ICC_ANIMATE_CLASS |
-				ICC_DATE_CLASSES |
-				ICC_USEREX_CLASSES |
-				ICC_COOL_CLASSES |
-				ICC_INTERNET_CLASSES |
-				ICC_PAGESCROLLER_CLASS |
-				ICC_NATIVEFNTCTL_CLASS |
-				ICC_LINK_CLASS |
-				ICC_LISTVIEW_CLASSES |
-				ICC_TREEVIEW_CLASSES,
-		)
+	initCommonControls(
+		ICC_WIN95_CLASSES |
+			ICC_STANDARD_CLASSES |
+			ICC_BAR_CLASSES |
+			ICC_TAB_CLASSES |
+			ICC_UPDOWN_CLASS |
+			ICC_PROGRESS_CLASS |
+			ICC_HOTKEY_CLASS |
+			ICC_ANIMATE_CLASS |
+			ICC_DATE_CLASSES |
+			ICC_USEREX_CLASSES |
+			ICC_COOL_CLASSES |
+			ICC_INTERNET_CLASSES |
+			ICC_PAGESCROLLER_CLASS |
+			ICC_NATIVEFNTCTL_CLASS |
+			ICC_LINK_CLASS |
+			ICC_LISTVIEW_CLASSES |
+			ICC_TREEVIEW_CLASSES,
+	)
 }
 
 // initCommonControls initializes common controls

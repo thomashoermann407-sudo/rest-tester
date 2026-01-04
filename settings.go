@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 )
 
-
 type Settings struct {
 	RecentProjects []string          `json:"recentProjects"`
 	Certificate    CertificateConfig `json:"certificate"`
@@ -34,7 +33,7 @@ func InitSettings() (*Settings, error) {
 }
 
 // addRecentProject adds a path to the recent projects list
-func (settings *Settings) addRecentProject(path string) {
+func (settings *Settings) addRecentProject(path string) error {
 	// Remove if already exists
 	for i, p := range settings.RecentProjects {
 		if p == path {
@@ -48,15 +47,18 @@ func (settings *Settings) addRecentProject(path string) {
 	if len(settings.RecentProjects) > 10 {
 		settings.RecentProjects = settings.RecentProjects[:10]
 	}
-	settings.save()
+	return settings.save()
 }
 
 // save writes the settings to file
-func (settings *Settings) save() {
+func (settings *Settings) save() error {
 	// Save to file
 	data, err := json.MarshalIndent(settings, "", "  ")
-	if err == nil {
-		os.MkdirAll(filepath.Dir(settingsFilePath()), 0755)
-		os.WriteFile(settingsFilePath(), data, 0644)
+	if err != nil {
+		return err
 	}
+	if err := os.MkdirAll(filepath.Dir(settingsFilePath()), 0755); err != nil {
+		return err
+	}
+	return os.WriteFile(settingsFilePath(), data, 0644)
 }

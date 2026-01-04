@@ -43,10 +43,14 @@ const (
 	WM_NCHITTEST     = 0x0084
 	WM_NCMOUSEMOVE   = 0x00A0
 	WM_NCLBUTTONDOWN = 0x00A1
+	WM_NOTIFY        = 0x004E
 	WM_COMMAND       = 0x0111
+	WM_CONTEXTMENU   = 0x007B
 	WM_MOUSEMOVE     = 0x0200
 	WM_LBUTTONDOWN   = 0x0201
 	WM_LBUTTONUP     = 0x0202
+	WM_RBUTTONDOWN   = 0x0204
+	WM_RBUTTONUP     = 0x0205
 	WM_MOUSELEAVE    = 0x02A3
 	WM_USER          = 0x0400
 	WM_APP           = 0x8000
@@ -89,6 +93,8 @@ const (
 
 	BS_PUSHBUTTON    = 0x00000000
 	BS_DEFPUSHBUTTON = 0x00000001
+	BS_AUTOCHECKBOX  = 0x00000003
+	BS_GROUPBOX      = 0x00000007
 
 	ES_LEFT        = 0x0000
 	ES_AUTOHSCROLL = 0x0080
@@ -152,6 +158,7 @@ const (
 	CB_SETCURSEL    = 0x014E
 	CB_GETLBTEXT    = 0x0148
 	CB_GETLBTEXTLEN = 0x0149
+	CB_RESETCONTENT = 0x014B
 
 	// Edit control styles
 	ES_MULTILINE   = 0x0004
@@ -193,6 +200,55 @@ const (
 
 	// Button notifications
 	BN_CLICKED = 0
+
+	GWLP_ID = -12
+
+	// Checkbox helper functions
+	BM_GETCHECK = 0x00F0
+	BM_SETCHECK = 0x00F1
+	BST_CHECKED = 1
+
+	// TreeView constants
+	TVS_HASBUTTONS    = 0x0001
+	TVS_HASLINES      = 0x0002
+	TVS_LINESATROOT   = 0x0004
+	TVS_SHOWSELALWAYS = 0x0020
+	TVS_FULLROWSELECT = 0x1000
+	TVM_INSERTITEMW   = 0x1132
+	TVM_DELETEITEM    = 0x1101
+	TVM_GETNEXTITEM   = 0x110A
+	TVM_GETITEMW      = 0x113E
+	TVM_SETITEMW      = 0x113F
+	TVM_HITTEST       = 0x1111
+	TVGN_ROOT         = 0x0000
+	TVGN_NEXT         = 0x0001
+	TVGN_CHILD        = 0x0004
+	TVGN_PARENT       = 0x0003
+	TVGN_CARET        = 0x0009
+	TVIF_TEXT         = 0x0001
+	TVIF_PARAM        = 0x0004
+	TVIF_HANDLE       = 0x0010
+	TVI_ROOT          = ^uintptr(0x10000)
+	TVI_FIRST         = ^uintptr(0x0FFFF)
+	TVI_LAST          = ^uintptr(0x0FFFE)
+	TVI_SORT          = ^uintptr(0x0FFFD)
+	NM_DBLCLK         = ^uint32(3) + 1   // -3 as unsigned
+	NM_RCLICK         = ^uint32(5) + 1   // -5 as unsigned
+	TVN_SELCHANGEDW   = ^uint32(401) + 1 // -401 as unsigned
+
+	// TabControl constants
+	TCS_TABS           = 0x0000
+	TCS_MULTILINE      = 0x0200
+	TCM_INSERTITEMW    = 0x133E
+	TCM_DELETEITEM     = 0x1308
+	TCM_DELETEALLITEMS = 0x1309
+	TCM_GETCURSEL      = 0x130B
+	TCM_SETCURSEL      = 0x130C
+	TCM_GETITEMCOUNT   = 0x1304
+	TCIF_TEXT          = 0x0001
+	TCIF_PARAM         = 0x0008
+	TCN_SELCHANGE      = ^uint32(550) + 1 // -550 as unsigned
+
 )
 
 // ComCtl32 Common Control Class Names
