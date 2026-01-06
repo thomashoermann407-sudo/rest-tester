@@ -107,28 +107,16 @@ func (w *Window) CreateGroupBox(text string) *Control {
 
 // CreateMultilineEdit creates a multi-line text area
 func (w *Window) CreateMultilineEdit(readonly bool) *Control {
-	style := uint32(WS_CHILD | WS_BORDER | WS_VSCROLL | WS_HSCROLL | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN)
-	if readonly {
-		style |= ES_READONLY
-	}
-
-	hwnd := createWindowEx(
-		WS_EX_CLIENTEDGE,
-		StringToUTF16Ptr(WC_EDIT),
-		nil,
-		style,
-		0, 0, 0, 0,
-		w.hwnd,
-		0,
-		getModuleHandle(nil),
-		nil,
-	)
-	w.applyFont(hwnd)
-	return &Control{Hwnd: hwnd}
+	return w.createEditControl(readonly, false)
 }
 
 // CreateCodeEdit creates a multi-line text area with monospace font for code/JSON
 func (w *Window) CreateCodeEdit(readonly bool) *Control {
+	return w.createEditControl(readonly, true)
+}
+
+// createEditControl is the internal implementation for creating edit controls
+func (w *Window) createEditControl(readonly, monospace bool) *Control {
 	style := uint32(WS_CHILD | WS_BORDER | WS_VSCROLL | WS_HSCROLL | ES_LEFT | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN)
 	if readonly {
 		style |= ES_READONLY
@@ -145,12 +133,19 @@ func (w *Window) CreateCodeEdit(readonly bool) *Control {
 		getModuleHandle(nil),
 		nil,
 	)
-	// Apply monospace font
-	if w.monoFont != 0 {
+
+	// Apply appropriate font
+	if monospace && w.monoFont != 0 {
 		sendMessage(hwnd, WM_SETFONT, uintptr(w.monoFont), 1)
+	} else {
+		w.applyFont(hwnd)
 	}
+
 	// Enable modern visual styles
-	setWindowTheme(hwnd, "", "")
+	if monospace {
+		setWindowTheme(hwnd, "", "")
+	}
+
 	return &Control{Hwnd: hwnd}
 }
 
@@ -186,11 +181,9 @@ func (control *Control) SetText(text string) bool {
 }
 
 func (control *Control) SetReadOnly(readonly bool) {
-	var wParam uintptr
+	wParam := uintptr(0)
 	if readonly {
 		wParam = 1
-	} else {
-		wParam = 0
 	}
 	sendMessage(control.Hwnd, EM_SETREADONLY, wParam, 0)
 }
@@ -237,28 +230,28 @@ type CheckBoxControl struct {
 
 // CreateComboBox creates a dropdown combo box
 func (w *Window) CreateComboBox() *ComboBoxControl {
-	hwnd := createWindowEx(
-		0,
-		StringToUTF16Ptr(WC_COMBOBOX),
-		nil,
-		WS_CHILD|CBS_DROPDOWNLIST|CBS_HASSTRINGS,
-		0, 0, 0, 0,
-		w.hwnd,
-		hMenu(uintptr(nextID())),
-		getModuleHandle(nil),
-		nil,
-	)
-	w.applyFont(hwnd)
-	return &ComboBoxControl{ClickControl: ClickControl{Control: Control{Hwnd: hwnd}}}
+	return w.createComboBox(false)
 }
 
 // CreateEditableComboBox creates an editable dropdown combo box
 func (w *Window) CreateEditableComboBox() *ComboBoxControl {
+	return w.createComboBox(true)
+}
+
+// createComboBox is the internal implementation for creating combo boxes
+func (w *Window) createComboBox(editable bool) *ComboBoxControl {
+	style := uint32(WS_CHILD | CBS_HASSTRINGS)
+	if editable {
+		style |= CBS_DROPDOWN | ES_AUTOHSCROLL
+	} else {
+		style |= CBS_DROPDOWNLIST
+	}
+
 	hwnd := createWindowEx(
 		0,
 		StringToUTF16Ptr(WC_COMBOBOX),
 		nil,
-		WS_CHILD|CBS_DROPDOWN|CBS_HASSTRINGS|ES_AUTOHSCROLL,
+		style,
 		0, 0, 0, 0,
 		w.hwnd,
 		hMenu(uintptr(nextID())),
@@ -863,6 +856,30 @@ func (t *TreeViewControl) GetNextSibling(hItem uintptr) uintptr {
 // GetParent returns the parent of an item
 func (t *TreeViewControl) GetParent(hItem uintptr) uintptr {
 	return sendMessage(t.Hwnd, TVM_GETNEXTITEM, TVGN_PARENT, hItem)
+}
+
+// IsExpanded returns true if the item is currently expanded
+func (t *TreeViewControl) IsExpanded(hItem uintptr) bool {
+	var item TVITEMW
+	item.Mask = TVIF_STATE | TVIF_HANDLE
+	item.StateMask = TVIS_EXPANDED
+	item.HItem = hItem
+	sendMessage(t.Hwnd, TVM_GETITEMW, 0, uintptr(unsafe.Pointer(&item)))
+	return item.State&TVIS_EXPANDED != 0
+}
+
+// ExpandItem expands or collapses the given item
+func (t *TreeViewControl) ExpandItem(hItem uintptr, expand bool) {
+	action := uintptr(TVE_EXPAND)
+	if !expand {
+		action = uintptr(TVE_COLLAPSE)
+	}
+	sendMessage(t.Hwnd, TVM_EXPAND, action, hItem)
+}
+
+// SelectItem selects the given item
+func (t *TreeViewControl) SelectItem(hItem uintptr) {
+	sendMessage(t.Hwnd, TVM_SELECTITEM, TVGN_CARET, hItem)
 }
 
 // GetItemLParam retrieves the user data (lParam) associated with an item

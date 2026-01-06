@@ -20,21 +20,20 @@ type projectViewPanelGroup struct {
 	openReqBtn      *win32.ButtonControl
 	deleteReqBtn    *win32.ButtonControl
 	addPathBtn      *win32.ButtonControl
-	addMethodBtn    *win32.ButtonControl
+	addRequestBtn   *win32.ButtonControl
 	projectInfo     *win32.Control
 	saveBtn         *win32.ButtonControl
 	timeoutLabel    *win32.Control
 	timeoutInput    *win32.Control
 
 	content        *ProjectViewTabContent
-	tabManager     TabManager
+	tabController  TabController
 	controlFactory win32.ControlFactory
 }
 
-// Menu IDs for context menu
+// Context menu IDs
 const (
-	menuIDAddPath = iota + 1000
-	menuIDAddRequest
+	menuIDAddRequest = iota + 1000
 	menuIDDelete
 	menuIDEdit
 )
@@ -73,7 +72,7 @@ func (p *projectViewPanelGroup) Resize(tabHeight, width, height int32) {
 	btnY += dy
 	p.addPathBtn.MoveWindow(btnX, btnY, layoutButtonWidth, layoutInputHeight)
 	btnY += dy
-	p.addMethodBtn.MoveWindow(btnX, btnY, layoutButtonWidth, layoutInputHeight)
+	p.addRequestBtn.MoveWindow(btnX, btnY, layoutButtonWidth, layoutInputHeight)
 	btnY += dy
 	p.saveBtn.MoveWindow(btnX, btnY, layoutButtonWidth, layoutInputHeight)
 
@@ -94,6 +93,9 @@ func (p *projectViewPanelGroup) SaveState() {
 			p.content.BoundProject.Settings.TimeoutInMs = timeout
 		}
 	}
+
+	// Capture tree view expansion/selection state
+	p.captureTreeState()
 }
 
 // populateEnvironmentList fills the ListView with environments
@@ -251,11 +253,68 @@ func (p *projectViewPanelGroup) populateTreeNode(parentHandle uintptr, node *Req
 	}
 }
 
-func (p *projectViewPanelGroup) SetState(data any) {
-	if p.content == data {
-		// Prevent the current state of the tree from being cleared and rebuilt unnecessarily
+// captureTreeState stores expanded nodes and selection into tab content
+func (p *projectViewPanelGroup) captureTreeState() {
+	if p.projectTreeView == nil || p.content == nil || p.content.itemToNodeInfo == nil {
 		return
 	}
+
+	var expanded []string
+
+	// Record selection
+	if sel := p.projectTreeView.GetSelection(); sel != 0 {
+		if info := p.content.itemToNodeInfo[sel]; info != nil {
+			p.content.SelectedPath = info.FullPath
+		}
+	}
+
+	var walk func(h uintptr)
+	walk = func(h uintptr) {
+		if h == 0 {
+			return
+		}
+		if info := p.content.itemToNodeInfo[h]; info != nil && p.projectTreeView.IsExpanded(h) {
+			expanded = append(expanded, info.FullPath)
+		}
+		for child := p.projectTreeView.GetChild(h); child != 0; child = p.projectTreeView.GetNextSibling(child) {
+			walk(child)
+		}
+	}
+
+	for root := p.projectTreeView.GetRoot(); root != 0; root = p.projectTreeView.GetNextSibling(root) {
+		walk(root)
+	}
+
+	p.content.ExpandedPaths = expanded
+}
+
+// restoreTreeState re-applies expansion and selection after repopulating tree
+func (p *projectViewPanelGroup) restoreTreeState() {
+	if p.projectTreeView == nil || p.content == nil || p.content.itemToNodeInfo == nil {
+		return
+	}
+
+	pathToHandle := make(map[string]uintptr)
+	for handle, info := range p.content.itemToNodeInfo {
+		if info != nil {
+			pathToHandle[info.FullPath] = handle
+		}
+	}
+
+	for _, path := range p.content.ExpandedPaths {
+		if h, ok := pathToHandle[path]; ok {
+			p.projectTreeView.ExpandItem(h, true)
+		}
+	}
+
+	if sel := p.content.SelectedPath; sel != "" {
+		if h, ok := pathToHandle[sel]; ok {
+			p.projectTreeView.SelectItem(h)
+		}
+	}
+}
+
+func (p *projectViewPanelGroup) SetState(data any) {
 	if content, ok := data.(*ProjectViewTabContent); ok {
 		p.content = content
 		if p.projectTreeView == nil || content.BoundProject == nil {
@@ -265,12 +324,16 @@ func (p *projectViewPanelGroup) SetState(data any) {
 		// Populate the environment list
 		p.populateEnvironmentList()
 
+		// Remember current tree state before rebuild
+		p.captureTreeState()
+
 		// Clear the tree view
 		p.projectTreeView.DeleteAllItems()
 		p.content.itemToNodeInfo = make(map[uintptr]*TreeNodeInfo)
 
 		// Populate the tree from the root (start with empty path for root node)
 		p.populateTreeNode(win32.TVI_ROOT, content.BoundProject.Tree, "")
+		p.restoreTreeState()
 
 		// Set timeout value
 		timeout := content.BoundProject.Settings.TimeoutInMs
@@ -289,7 +352,7 @@ func (p *projectViewPanelGroup) getSelectedRequest() (*Request, string) {
 	}
 	nodeInfo := p.content.itemToNodeInfo[itemHandle]
 	if nodeInfo != nil && nodeInfo.Type == NodeTypeRequest {
-		return nodeInfo.Request, "/" + nodeInfo.FullPath
+		return nodeInfo.Request, nodeInfo.FullPath
 	}
 	return nil, ""
 }
@@ -304,7 +367,7 @@ func (p *projectViewPanelGroup) getSelectedNodeInfo() *TreeNodeInfo {
 }
 
 // openSelectedRequest opens the selected request from project tree in a new tab
-func (p *projectViewPanelGroup) openSelectedRequest(projectWindow TabManager) {
+func (p *projectViewPanelGroup) openSelectedRequest(projectWindow TabController) {
 	req, path := p.getSelectedRequest()
 	if req == nil {
 		return
@@ -321,7 +384,6 @@ func (p *projectViewPanelGroup) showContextMenu(factory win32.ControlFactory, it
 	menu := factory.CreatePopupMenu()
 	defer menu.Destroy()
 
-	menu.AddItem(menuIDAddPath, "Add Sub-Path")
 	menu.AddItem(menuIDAddRequest, "Add Request")
 	menu.AddItem(menuIDEdit, "Edit")
 	menu.AddSeparator()
@@ -329,37 +391,22 @@ func (p *projectViewPanelGroup) showContextMenu(factory win32.ControlFactory, it
 
 	selectedID := menu.Show()
 	switch selectedID {
-	case menuIDAddPath:
-		p.addPath(nodeInfo)
 	case menuIDAddRequest:
-		p.addRequest(nodeInfo)
+		p.addNode(nodeInfo)
 	case menuIDDelete:
 		p.deleteNode(itemHandle, nodeInfo)
 	case menuIDEdit:
 		if nodeInfo != nil && nodeInfo.Request != nil {
-			p.openSelectedRequest(p.tabManager)
+			p.openSelectedRequest(p.tabController)
 		}
 	}
 }
 
-// addPath adds a new path segment to a node
-func (p *projectViewPanelGroup) addPath(nodeInfo *TreeNodeInfo) {
+// addNode adds a new path segment or request to a node
+func (p *projectViewPanelGroup) addNode(nodeInfo *TreeNodeInfo) {
 	if nodeInfo == nil {
-		return
+		nodeInfo = &TreeNodeInfo{Type: NodeTypePath, FullPath: ""}
 	}
-
-	// Create a dummy request to populate the tree
-	req := p.content.BoundProject.NewRequest()
-	p.content.BoundProject.AddRequestToTree(nodeInfo.FullPath, req)
-	p.SetState(p.content)
-}
-
-// addRequest adds a new request to a node
-func (p *projectViewPanelGroup) addRequest(nodeInfo *TreeNodeInfo) {
-	if nodeInfo == nil {
-		return
-	}
-	// Create a new request with path (no host)
 	req := p.content.BoundProject.NewRequest()
 	p.content.BoundProject.AddRequestToTree(nodeInfo.FullPath, req)
 	p.SetState(p.content)
@@ -396,14 +443,14 @@ const (
 	environmentColumnBaseURL
 )
 
-func createProjectViewPanel(factory win32.ControlFactory, tabManager TabManager, projectManager ProjectManager) *projectViewPanelGroup {
+func createProjectViewPanel(factory win32.ControlFactory, tabController TabController, projectManager ProjectManager) *projectViewPanelGroup {
 	group := &projectViewPanelGroup{
 		envLabel:       factory.CreateLabel("Environments:"),
 		projectInfo:    factory.CreateLabel("Double-click a request to open it in a new tab"),
 		timeoutLabel:   factory.CreateLabel("Request Timeout (milliseconds):"),
 		timeoutInput:   factory.CreateInput(),
 		controlFactory: factory,
-		tabManager:     tabManager,
+		tabController:  tabController,
 	}
 
 	// Create environment ListView
@@ -450,7 +497,7 @@ func createProjectViewPanel(factory win32.ControlFactory, tabManager TabManager,
 
 	// Create project tree view
 	group.projectTreeView = factory.CreateTreeView(func(tvc *win32.TreeViewControl) {
-		group.openSelectedRequest(tabManager)
+		group.openSelectedRequest(tabController)
 	})
 
 	// Set up right-click handler
@@ -459,7 +506,7 @@ func createProjectViewPanel(factory win32.ControlFactory, tabManager TabManager,
 	})
 
 	group.openReqBtn = factory.CreateButton("Open in Tab", func() {
-		group.openSelectedRequest(tabManager)
+		group.openSelectedRequest(tabController)
 	})
 	group.deleteReqBtn = factory.CreateButton("Delete", func() {
 		nodeInfo := group.getSelectedNodeInfo()
@@ -467,17 +514,24 @@ func createProjectViewPanel(factory win32.ControlFactory, tabManager TabManager,
 			group.deleteNode(group.projectTreeView.GetSelection(), nodeInfo)
 		}
 	})
-	group.addPathBtn = factory.CreateButton("Add Path", func() {
+	group.addPathBtn = factory.CreateButton("Add Path", func() { // TODO: Unifiy Add Path and Add Request
 		nodeInfo := group.getSelectedNodeInfo()
-		if nodeInfo != nil {
-			group.addPath(nodeInfo)
+		if nodeInfo == nil {
+			nodeInfo = &TreeNodeInfo{Type: NodeTypePath, FullPath: ""}
 		}
+
+		// Create a new pending request with a suggested path
+		req := group.content.BoundProject.NewRequest()
+
+		// Create a pending request tab with the suggested path
+		tabController.createPendingRequestTab(req, nodeInfo.FullPath+"/newpath")
 	})
-	group.addMethodBtn = factory.CreateButton("Add Method", func() {
+	group.addRequestBtn = factory.CreateButton("Add Request", func() {
 		nodeInfo := group.getSelectedNodeInfo()
-		if nodeInfo != nil {
-			group.addRequest(nodeInfo)
+		if nodeInfo == nil {
+			nodeInfo = &TreeNodeInfo{Type: NodeTypePath, FullPath: ""}
 		}
+		group.addNode(nodeInfo)
 	})
 	group.saveBtn = factory.CreateButton("Save Project", func() {
 		group.SaveState() // Save timeout before saving to file
@@ -493,11 +547,8 @@ func createProjectViewPanel(factory win32.ControlFactory, tabManager TabManager,
 		group.projectTreeView,
 		group.openReqBtn,
 		group.deleteReqBtn,
-		group.projectTreeView,
-		group.openReqBtn,
-		group.deleteReqBtn,
 		group.addPathBtn,
-		group.addMethodBtn,
+		group.addRequestBtn,
 		group.projectInfo,
 		group.saveBtn,
 		group.timeoutLabel,

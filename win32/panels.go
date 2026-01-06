@@ -79,7 +79,8 @@ func (p *Panels) Resize(width, height int32) {
 	p.panels[p.active].Resize(p.tabHeight, width, height)
 }
 
-func (p *Panels) get(panel PanelGroupName) PanelGroup {
+// Get returns the panel group with the given name
+func (p *Panels) Get(panel PanelGroupName) PanelGroup {
 	return p.panels[panel]
 }
 

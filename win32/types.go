@@ -224,6 +224,8 @@ const (
 	TVM_INSERTITEMW   = 0x1132
 	TVM_DELETEITEM    = 0x1101
 	TVM_GETNEXTITEM   = 0x110A
+	TVM_EXPAND        = 0x1102
+	TVM_SELECTITEM    = 0x110B
 	TVM_GETITEMW      = 0x113E
 	TVM_SETITEMW      = 0x113F
 	TVM_HITTEST       = 0x1111
@@ -232,9 +234,13 @@ const (
 	TVGN_CHILD        = 0x0004
 	TVGN_PARENT       = 0x0003
 	TVGN_CARET        = 0x0009
+	TVE_COLLAPSE      = 0x0001
+	TVE_EXPAND        = 0x0002
 	TVIF_TEXT         = 0x0001
+	TVIF_STATE        = 0x0008
 	TVIF_PARAM        = 0x0004
 	TVIF_HANDLE       = 0x0010
+	TVIS_EXPANDED     = 0x0020
 	TVI_ROOT          = ^uintptr(0xFFFF) // -0x10000 sign-extended
 	TVI_FIRST         = ^uintptr(0xFFFE) // -0x0FFFF sign-extended
 	TVI_LAST          = ^uintptr(0xFFFD) // -0x0FFFE sign-extended

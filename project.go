@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,13 @@ type Environment struct {
 	BaseURL string `json:"baseUrl"` // Base URL including protocol and host (e.g., "https://api.example.com")
 }
 
+func (e *Environment) String() string {
+	if e.Name != "" {
+		return fmt.Sprintf("%s [%s]", e.Name, e.BaseURL)
+	}
+	return e.BaseURL
+}
+
 type ProjectSettings struct {
 	TimeoutInMs           int64 `json:"timeoutInMs"`           // Request timeout in milliseconds
 	DefaultEnvironmentIdx int   `json:"defaultEnvironmentIdx"` // Index of default environment (-1 for none)
@@ -51,24 +59,57 @@ func NewRequestNode(segment string) *RequestNode {
 // AddRequestAtPath adds a request at the specified full path
 func (n *RequestNode) AddRequestAtPath(fullPath string, req *Request) {
 	path := strings.TrimPrefix(fullPath, "/")
+	if path == "" {
+		// Adding to root node
+		n.Requests = append(n.Requests, req)
+		return
+	}
+
+	// Split into first segment and rest
+	parts := strings.SplitN(path, "/", 2)
+	firstSegment := parts[0]
+	var remainingPath string
+	if len(parts) > 1 {
+		remainingPath = parts[1]
+	}
+
+	// Check if a child with this segment already exists
 	for _, child := range n.Children {
-		if remainingPath, ok := strings.CutPrefix(path, child.Segment); ok {
+		if child.Segment == firstSegment {
+			// Found existing path segment, recurse into it
 			if remainingPath == "" {
+				// This is the final segment, add request here
 				child.Requests = append(child.Requests, req)
-				return
 			} else {
+				// More path segments to process
 				child.AddRequestAtPath(remainingPath, req)
-				return
 			}
+			return
 		}
 	}
-	// If no matching child, create new nodes
+
+	// No matching child found, create new path segments
 	segments := strings.Split(path, "/")
 	currentNode := n
 	for _, segment := range segments {
-		newNode := NewRequestNode(segment)
-		currentNode.Children = append(currentNode.Children, newNode)
-		currentNode = newNode
+		if segment == "" {
+			continue
+		}
+		// Check if this segment already exists
+		var found *RequestNode
+		for _, child := range currentNode.Children {
+			if child.Segment == segment {
+				found = child
+				break
+			}
+		}
+		if found != nil {
+			currentNode = found
+		} else {
+			newNode := NewRequestNode(segment)
+			currentNode.Children = append(currentNode.Children, newNode)
+			currentNode = newNode
+		}
 	}
 	currentNode.Requests = append(currentNode.Requests, req)
 }

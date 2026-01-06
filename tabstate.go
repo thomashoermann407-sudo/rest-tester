@@ -39,6 +39,8 @@ type ProjectViewTabContent struct {
 	SelectedIndex  int      // Currently selected request index in listbox
 	ScrollPosition int      // Scroll position in the listbox
 	itemToNodeInfo map[uintptr]*TreeNodeInfo
+	ExpandedPaths  []string // Paths expanded in tree view
+	SelectedPath   string   // Last selected path in tree view
 }
 
 // SettingsTabContent holds state specific to settings tabs

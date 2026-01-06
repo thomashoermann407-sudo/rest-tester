@@ -24,7 +24,7 @@ type Window struct {
 	OnMouseDown func(x, y int32) bool // Returns true if handled
 	OnMouseUp   func(x, y int32) bool // Returns true if handled
 	OnDestroy   func()                // Called when window is being destroyed
-	TabManager  TabDrawer
+	TabDrawer   TabDrawer
 	width       int32
 	height      int32
 	font        hFont
@@ -180,16 +180,16 @@ func NewWindow(title string, width, height int32) *Window {
 				w.OnResize(w.width, w.height)
 			}
 			// Also invalidate tab bar to repaint on resize
-			if w.TabManager != nil {
-				w.TabManager.Invalidate()
+			if w.TabDrawer != nil {
+				w.TabDrawer.Invalidate()
 			}
 			return 0, false
 
 		case WM_PAINT:
-			if w.TabManager != nil {
+			if w.TabDrawer != nil {
 				var ps paintStruct
 				hdc := beginPaint(w.hwnd, &ps)
-				w.TabManager.Paint(hdc, w.width)
+				w.TabDrawer.Paint(hdc, w.width)
 				endPaint(w.hwnd, &ps)
 				return 0, true
 			}
@@ -199,8 +199,8 @@ func NewWindow(title string, width, height int32) *Window {
 			y := int32((lParam >> 16) & 0xFFFF)
 
 			// Let tab manager handle it first (for tab bar area)
-			if w.TabManager != nil {
-				w.TabManager.HandleMouseMove(x, y, w.width)
+			if w.TabDrawer != nil {
+				w.TabDrawer.HandleMouseMove(x, y, w.width)
 			}
 
 			// Then let application handle mouse move
@@ -214,9 +214,9 @@ func NewWindow(title string, width, height int32) *Window {
 			y := int32((lParam >> 16) & 0xFFFF)
 
 			// Let tab manager handle it first (for tab bar area)
-			if w.TabManager != nil {
-				if y < w.TabManager.GetHeight() {
-					w.TabManager.HandleClick(x, y, w.width)
+			if w.TabDrawer != nil {
+				if y < w.TabDrawer.GetHeight() {
+					w.TabDrawer.HandleClick(x, y, w.width)
 					return 0, true
 				}
 			}
@@ -238,8 +238,8 @@ func NewWindow(title string, width, height int32) *Window {
 			return 0, false
 
 		case WM_MOUSELEAVE:
-			if w.TabManager != nil {
-				w.TabManager.Invalidate()
+			if w.TabDrawer != nil {
+				w.TabDrawer.Invalidate()
 			}
 			return 0, false
 
@@ -248,7 +248,7 @@ func NewWindow(title string, width, height int32) *Window {
 			if w.OnDestroy != nil {
 				w.OnDestroy()
 			}
-			w.TabManager.Destroy()
+			w.TabDrawer.Destroy()
 			w.Destroy()
 			// Let the default handler process WM_DESTROY
 			return 0, false

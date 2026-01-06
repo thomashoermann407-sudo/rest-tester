@@ -148,7 +148,7 @@ func (tm *TabManager[T]) SetActiveTab(tabIndex int) *Tab[T] {
 		if tm.activeTabIndex != tabIndex {
 			// Call before change callback to allow saving state
 			if activeTab := tm.getActiveTab(); activeTab != nil {
-				tm.panels.get(activeTab.PanelGroupName).SaveState()
+				tm.panels.Get(activeTab.PanelGroupName).SaveState()
 			}
 
 			tm.activeTabIndex = tabIndex
@@ -162,7 +162,7 @@ func (tm *TabManager[T]) SetActiveTab(tabIndex int) *Tab[T] {
 func (tm *TabManager[T]) onTabChanged() {
 	tab := tm.getActiveTab()
 	tm.panels.Show(tab.PanelGroupName)
-	tm.panels.get(tab.PanelGroupName).SetState(tab.Data)
+	tm.panels.Get(tab.PanelGroupName).SetState(tab.Data)
 }
 
 // Todo: remove

@@ -18,12 +18,14 @@ type ProjectWindow struct {
 	settings *Settings
 }
 
-type TabManager interface {
+type TabController interface {
 	addNewTab()
 	createSettingsTab()
 	createWelcomeTab()
 	createProjectViewTab()
 	createRequestTab(req *Request, path string)
+	createPendingRequestTab(req *Request, path string)
+	refreshProjectViewTab()
 }
 
 type ProjectManager interface {
@@ -37,13 +39,13 @@ type ProjectManager interface {
 func NewProjectWindow() *ProjectWindow {
 	mainWindow := win32.NewWindow("REST Tester", 1100, 850)
 	tabs := win32.NewTabManager[any](mainWindow)
-	mainWindow.TabManager = tabs
+	mainWindow.TabDrawer = tabs
 	pw := &ProjectWindow{
 		mainWindow: mainWindow,
 		tabs:       tabs,
 	}
 	panels := tabs.GetPanels()
-	panels.Add(PanelRequest, createRequestPanel(pw.mainWindow))
+	panels.Add(PanelRequest, createRequestPanel(pw.mainWindow, pw))
 	panels.Add(PanelProjectView, createProjectViewPanel(pw.mainWindow, pw, pw))
 	panels.Add(PanelSettings, createSettingsPanel(pw.mainWindow))
 	panels.Add(PanelWelcome, createWelcomePanel(pw.mainWindow, pw))
@@ -84,30 +86,34 @@ func (pw *ProjectWindow) showContextMenu() {
 	}
 	defer menu.Destroy()
 
-	menuNewTab := 1000
-	menuSettings := 1001
-	menuAbout := 1002
+	menuIDNewTab := 1000
+	menuIDSettings := 1001
+	menuIDAbout := 1002
 
 	if pw.currentProject == nil {
-		menu.AddItem(menuNewTab, "➕ New Project")
+		menu.AddItem(menuIDNewTab, "➕ New Project")
 	} else {
-		menu.AddItem(menuNewTab, "➕ New Request")
+		menu.AddItem(menuIDNewTab, "➕ New Request")
 	}
 	menu.AddSeparator()
-	menu.AddItem(menuSettings, "⚙ Settings")
+	menu.AddItem(menuIDSettings, "⚙ Settings")
 	menu.AddSeparator()
-	menu.AddItem(menuAbout, "About REST Tester")
+	menu.AddItem(menuIDAbout, "About REST Tester")
 
 	// Show menu at cursor position (since menu button is in tab bar)
 	selected := menu.Show()
 
 	switch selected {
-	case menuNewTab:
+	case menuIDNewTab:
 		pw.addNewTab()
-	case menuSettings:
+	case menuIDSettings:
 		pw.createSettingsTab()
-	case menuAbout:
-		pw.mainWindow.MessageBox("About", "REST Tester v1.0\nA modern REST API testing tool")
+	case menuIDAbout:
+		pw.mainWindow.MessageBox("About", `REST Tester v1.0
+A REST API testing tool
+Developed by Thomas Hörmann
+Published under Apache License 2.0
+https://github.com/thomashoermann407-sudo/rest-tester`)
 	}
 }
 
@@ -121,7 +127,7 @@ func (pw *ProjectWindow) addNewTab() {
 
 func (pw *ProjectWindow) newRequest() {
 	req := pw.currentProject.NewRequest()
-	pw.createPendingRequestTab(req)
+	pw.createPendingRequestTab(req, "/")
 }
 
 func (pw *ProjectWindow) newProject() {
@@ -185,25 +191,27 @@ func (pw *ProjectWindow) openProjectFromPath(filePath string) {
 
 // createRequestTab creates a new request tab bound to a Request object
 func (pw *ProjectWindow) createRequestTab(req *Request, path string) {
+	pw.createRequestTabInternal(req, path, false)
+}
+
+func (pw *ProjectWindow) createPendingRequestTab(req *Request, path string) {
+	pw.createRequestTabInternal(req, path, true)
+}
+
+// createRequestTabInternal creates a request tab with optional pending state
+func (pw *ProjectWindow) createRequestTabInternal(req *Request, path string, pending bool) {
 	content := &RequestTabContent{
 		BoundRequest: req,
 		BoundProject: pw.currentProject,
 		Path:         path,
 		Settings:     pw.settings,
+		Pending:      pending,
 	}
-	name := req.Method + " " + req.Name
-	pw.tabs.AddTab(name, content, PanelRequest)
-}
 
-func (pw *ProjectWindow) createPendingRequestTab(req *Request) {
-	content := &RequestTabContent{
-		BoundRequest: req,
-		BoundProject: pw.currentProject,
-		Path:         "/",
-		Settings:     pw.settings,
-		Pending:      true,
-	}
 	name := "New Request"
+	if !pending {
+		name = req.Method + " " + req.Name
+	}
 	pw.tabs.AddTab(name, content, PanelRequest)
 }
 
@@ -254,4 +262,13 @@ func (pw *ProjectWindow) createWelcomeTab() {
 		SelectedRecentIndex: -1,
 	}
 	pw.tabs.AddTab("Welcome", content, PanelWelcome)
+}
+
+// refreshProjectViewTab refreshes the project view tab if it exists
+func (pw *ProjectWindow) refreshProjectViewTab() {
+	// Find the project view tab
+	if existingTabIndex, ok := pw.tabs.FindTabByPanelGroup(PanelProjectView); ok {
+		// SetActiveTab automatically calls SetState, which refreshes the tree
+		pw.tabs.SetActiveTab(existingTabIndex)
+	}
 }

@@ -28,6 +28,7 @@ type requestPanelGroup struct {
 	sendBtn          *win32.ButtonControl
 	clearResponseBtn *win32.ButtonControl
 	manageEnvBtn     *win32.ButtonControl
+	appendBtn        *win32.ButtonControl
 	methodLabel      *win32.Control
 	envLabel         *win32.Control
 	urlLabel         *win32.Control
@@ -36,7 +37,9 @@ type requestPanelGroup struct {
 	bodyLabel        *win32.Control
 	responseLabel    *win32.Control
 
-	content *RequestTabContent
+	content        *RequestTabContent
+	tabController  TabController
+	controlFactory win32.ControlFactory
 }
 
 func (r *requestPanelGroup) Resize(tabHeight, width, height int32) {
@@ -64,13 +67,19 @@ func (r *requestPanelGroup) Resize(tabHeight, width, height int32) {
 	methodComboWidth := int32(90)
 	envLabelWidth := int32(30)
 	envComboWidth := int32(150)
-	sendBtnWidth := int32(90)
-	clearBtnWidth := int32(100)
-	manageEnvBtnWidth := int32(90)
+	btnWidth := int32(90)
 
 	// Position name label and input
 	r.nameLabel.MoveWindow(layoutPadding, y+3, methodLabelWidth, layoutLabelHeight)
 	r.nameInput.MoveWindow(layoutPadding+methodLabelWidth+layoutPadding, y, layoutColumnWidth, layoutInputHeight)
+
+	// Show/hide append button based on pending state
+	r.appendBtn.MoveWindow(layoutPadding+methodLabelWidth+layoutPadding+layoutColumnWidth+layoutPadding, y, btnWidth*2, layoutInputHeight)
+	if r.content != nil && r.content.Pending {
+		r.appendBtn.Show()
+	} else {
+		r.appendBtn.Hide()
+	}
 
 	y += layoutInputHeight + layoutPadding
 	// Position method label and combo
@@ -87,11 +96,11 @@ func (r *requestPanelGroup) Resize(tabHeight, width, height int32) {
 	r.urlLabel.MoveWindow(pathX, y+3, int32(30), layoutLabelHeight)
 
 	pathInputX := pathX + 30 + layoutPadding
-	pathWidth := availableWidth - methodLabelWidth - methodComboWidth - envLabelWidth - envComboWidth - 30 - sendBtnWidth - clearBtnWidth - manageEnvBtnWidth - layoutPadding*8
+	pathWidth := availableWidth - methodLabelWidth - methodComboWidth - envLabelWidth - envComboWidth - 30 - btnWidth*3 - layoutPadding*8
 	r.urlInput.MoveWindow(pathInputX, y, pathWidth, layoutInputHeight)
-	r.manageEnvBtn.MoveWindow(width-layoutPadding-sendBtnWidth-clearBtnWidth-manageEnvBtnWidth-layoutPadding*2, y, manageEnvBtnWidth, layoutInputHeight)
-	r.sendBtn.MoveWindow(width-layoutPadding-sendBtnWidth-clearBtnWidth-layoutPadding, y, sendBtnWidth, layoutInputHeight)
-	r.clearResponseBtn.MoveWindow(width-layoutPadding-clearBtnWidth, y, clearBtnWidth, layoutInputHeight)
+	r.manageEnvBtn.MoveWindow(width-layoutPadding-btnWidth*3-layoutPadding*2, y, btnWidth, layoutInputHeight)
+	r.sendBtn.MoveWindow(width-layoutPadding-btnWidth*2-layoutPadding, y, btnWidth, layoutInputHeight)
+	r.clearResponseBtn.MoveWindow(width-layoutPadding-btnWidth-layoutPadding, y, btnWidth, layoutInputHeight)
 
 	// === Query Parameters & Headers Section ===
 	y += layoutInputHeight + layoutPadding
@@ -178,19 +187,18 @@ func (r *requestPanelGroup) SetState(data any) {
 			}
 		}
 
+		if content.Pending {
+			r.appendBtn.Show()
+		} else {
+			r.appendBtn.Hide()
+		}
+
 		// Populate environment dropdown with formatted display text
 		r.envCombo.Clear()
 		selectedIndex := -1
 		if content.BoundProject != nil {
 			for i, env := range content.BoundProject.Environments {
-				// Format display text: "Name [BaseURL]" or just "BaseURL"
-				var displayText string
-				if env.Name != "" {
-					displayText = fmt.Sprintf("%s [%s]", env.Name, env.BaseURL)
-				} else {
-					displayText = env.BaseURL
-				}
-				r.envCombo.AddString(displayText)
+				r.envCombo.AddString(env.String())
 
 				// Check if this environment matches the request's Host
 				if env.BaseURL == req.Host {
@@ -274,7 +282,7 @@ func (r *requestPanelGroup) displayResponse(index int) {
 	r.responseHeaders.SetText(strings.Join(headerLines, "\r\n"))
 }
 
-func createRequestPanel(factory win32.ControlFactory) *requestPanelGroup {
+func createRequestPanel(factory win32.ControlFactory, tabController TabController) *requestPanelGroup {
 	group := &requestPanelGroup{
 		nameLabel:       factory.CreateLabel("Name"),
 		nameInput:       factory.CreateInput(),
@@ -296,6 +304,8 @@ func createRequestPanel(factory win32.ControlFactory) *requestPanelGroup {
 		responseInfo:    factory.CreateLabel(""),
 		responseBody:    factory.CreateCodeEdit(true),
 		responseHeaders: factory.CreateCodeEdit(true),
+		tabController:   tabController,
+		controlFactory:  factory,
 	}
 
 	// Set up tab change handler
@@ -314,6 +324,42 @@ func createRequestPanel(factory win32.ControlFactory) *requestPanelGroup {
 	group.manageEnvBtn = factory.CreateButton("Manage...", func() {
 		// TODO: Open environment management dialog
 		factory.MessageBox("Environment Management", "Environment management dialog will be implemented here.")
+	})
+
+	group.appendBtn = factory.CreateButton("Append to Project", func() {
+		if group.content == nil || !group.content.Pending {
+			return
+		}
+
+		// Save the current state first
+		group.SaveState()
+
+		// Validate that we have the necessary data
+		if group.content.Path == "" {
+			factory.MessageBox("Invalid Path", "Please enter a path for the request.")
+			return
+		}
+
+		if group.content.BoundProject == nil {
+			factory.MessageBox("No Project", "No project is loaded. Please create or open a project first.")
+			return
+		}
+
+		// Add the request to the project tree
+		// The AddRequestAtPath method will handle avoiding duplicate paths
+		group.content.BoundProject.AddRequestToTree(group.content.Path, group.content.BoundRequest)
+
+		// Mark the request as no longer pending
+		group.content.Pending = false
+
+		// Update the URL input to be readonly now
+		group.urlInput.SetReadOnly(true)
+
+		// Hide the append button
+		group.appendBtn.Hide()
+
+		// Refresh the project view tab to show the newly added request
+		group.tabController.refreshProjectViewTab()
 	})
 
 	group.sendBtn = factory.CreateButton("Send", func() {
@@ -384,7 +430,7 @@ func createRequestPanel(factory win32.ControlFactory) *requestPanelGroup {
 		group.nameLabel, group.nameInput,
 		group.methodCombo, group.envCombo, group.urlInput, group.headersInput, group.queryInput, group.bodyInput,
 		group.responseBody, group.responseHeaders, group.responseInfo, group.responseTabCtrl,
-		group.statusLabel, group.sendBtn, group.clearResponseBtn, group.manageEnvBtn,
+		group.statusLabel, group.sendBtn, group.clearResponseBtn, group.manageEnvBtn, group.appendBtn,
 		group.methodLabel, group.envLabel, group.urlLabel, group.headersLabel, group.queryLabel, group.bodyLabel, group.responseLabel,
 	)
 	return group
